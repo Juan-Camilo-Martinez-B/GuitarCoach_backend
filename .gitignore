@@ -1,0 +1,25 @@
+# Secretos y entorno
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Herramientas
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sistema
+.DS_Store
+Thumbs.db
