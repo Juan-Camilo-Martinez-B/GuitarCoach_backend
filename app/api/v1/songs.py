@@ -43,7 +43,17 @@ async def search_songs(request: Request, q: str = Query(min_length=1)) -> list[d
     uow: UnitOfWork = request.app.state.uow
     songs = await uow.songs.search(q)
     return [
-        {"id": song.id, "title": song.title, "artist": song.artist, "bpm": song.bpm.value}
+        {
+            "id": song.id,
+            "title": song.title,
+            "artist": song.artist,
+            "song_key": song.song_key,
+            "bpm": song.bpm.value,
+            "chords": [
+                {"bar": chord.bar, "beat": chord.beat, "chord": chord.chord.symbol}
+                for chord in song.chords
+            ],
+        }
         for song in songs
     ]
 
