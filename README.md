@@ -1,11 +1,28 @@
 # GuitarCoach Backend
 
-API del tutor de guitarra GuitarCoach AI (FastAPI).
+API FastAPI de GuitarCoach AI. El audio no llega a este servicio: el cliente envía telemetría.
 
-Este repositorio está en la **Fase 0**: solo contiene la estructura de carpetas y archivos marcador. No hay dependencias, lógica ni configuración de ejecución.
+## Cómo ejecutarlo
 
-El audio crudo del estudiante no llega a este servicio; el cliente solo enviará telemetría.
+Requisitos: Python 3.12.
 
-## Siguiente paso
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m ruff check app tests
+.\.venv\Scripts\python.exe -m ruff format --check app tests
+.\.venv\Scripts\python.exe -m mypy
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+```
 
-Inicializar Git en esta carpeta, vincular el remoto de GitHub y crear el primer commit. La implementación empieza al confirmar la Fase 1.
+`GET /health` responde `{"status": "ok"}`.
+
+Copia `.env.example` a `.env` para el resto de variables. En producción `JWT_SECRET` no puede quedar en el valor de desarrollo.
+
+La imagen de contenedor escucha en el puerto 8080:
+
+```powershell
+docker build -t guitarcoach-backend .
+docker run --rm -p 8080:8080 guitarcoach-backend
+```
