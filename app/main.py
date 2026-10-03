@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from app.api.middleware.errors import register_exception_handlers
 from app.api.middleware.rate_limit import SlidingWindowLimiter, install_auth_rate_limit
+from app.api.middleware.security import install_security
 from app.api.v1.attempts import router as attempts_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.health import router as health_router
@@ -63,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.dispatcher = dispatcher
     app.state.tutor = GeminiTutor(active.gemini_api_key, active.gemini_model)
     register_exception_handlers(app)
+    install_security(app, active.cors_origins)
     install_auth_rate_limit(app, SlidingWindowLimiter(active.auth_requests_per_minute))
     app.include_router(health_router)
     app.include_router(auth_router)
