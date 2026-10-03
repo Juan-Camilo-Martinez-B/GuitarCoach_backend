@@ -21,6 +21,8 @@ class HitResult:
     detected: Chord | None
     delta_ms: int
     kind: HitKind
+    bar: int = 1
+    confidence: float = 1.0
 
     @classmethod
     def judge(
