@@ -1,0 +1,22 @@
+name: desplegar
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cloud-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Publicar el servicio
+        run: |
+          gcloud run deploy guitarcoach-backend \
+            --source . \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT }}" \
+            --port 8080 \
+            --allow-unauthenticated
