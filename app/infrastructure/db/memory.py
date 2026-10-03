@@ -81,8 +81,9 @@ class InMemoryAttempts:
 
 
 class InMemoryReports:
-    def __init__(self) -> None:
+    def __init__(self, attempts: InMemoryAttempts) -> None:
         self._items: list[Report] = []
+        self._attempts = attempts
 
     async def add(self, report: Report) -> None:
         self._items.append(report)
@@ -94,7 +95,14 @@ class InMemoryReports:
         return next((item for item in self._items if item.metrics_hash == metrics_hash), None)
 
     async def count_for_user_on_day(self, user_id: UUID, day: date) -> int:
-        return 0
+        total = 0
+        for report in self._items:
+            attempt = await self._attempts.get(report.attempt_id)
+            if attempt is None or attempt.user_id != user_id:
+                continue
+            if report.created_at.date() == day:
+                total += 1
+        return total
 
 
 class InMemoryJobs:
@@ -116,7 +124,7 @@ class InMemoryUnitOfWork:
         self.users = InMemoryUsers()
         self.songs = InMemorySongs()
         self.attempts = InMemoryAttempts()
-        self.reports = InMemoryReports()
+        self.reports = InMemoryReports(self.attempts)
         self.jobs = InMemoryJobs()
 
     async def commit(self) -> None:

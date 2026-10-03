@@ -10,12 +10,15 @@ from app.api.middleware.errors import register_exception_handlers
 from app.api.v1.attempts import router as attempts_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.health import router as health_router
+from app.api.v1.progress import router as progress_router
+from app.api.v1.reports import router as reports_router
 from app.api.v1.songs import router as songs_router
 from app.application.security import SystemClock
 from app.application.use_cases.import_song import ImportSong
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.domain.interfaces.repositories import UnitOfWork
+from app.infrastructure.ai.gemini_tutor import GeminiTutor
 from app.infrastructure.db.memory import InMemoryUnitOfWork
 from app.infrastructure.queue.local_dispatcher import LocalTaskDispatcher
 from app.infrastructure.scraping.open_fixture import OpenFixtureScraper
@@ -57,11 +60,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     dispatcher.register("import_song", run_import)
     app.state.importer = importer
     app.state.dispatcher = dispatcher
+    app.state.tutor = GeminiTutor(active.gemini_api_key, active.gemini_model)
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(attempts_router)
     app.include_router(songs_router)
+    app.include_router(reports_router)
+    app.include_router(progress_router)
     return app
 
 
