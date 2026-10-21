@@ -75,9 +75,9 @@ LESSONS: tuple[Lesson, ...] = (
         "La mano marca el pulso antes de acelerar.",
         (
             "Abajo va de la cuerda 6 hacia la 1. Arriba vuelve.",
-            "El patrón de la escuela es abajo, abajo, arriba, arriba, abajo, arriba.",
+            "El básico son cuatro golpes hacia abajo, todos del mismo tiempo.",
             "Se mueve la muñeca. El antebrazo casi quieto.",
-            "Primero lento y parejo. La velocidad llega después del pulso.",
+            "Primero lento, a 60 pulsos. Cada ↓ dura un tiempo.",
         ),
     ),
     Lesson(
@@ -86,8 +86,8 @@ LESSONS: tuple[Lesson, ...] = (
         "Cuatro acordes mayores y menores, sin prisa.",
         (
             "La carta es Sol, Re, Mim y Do, a 72 BPM.",
-            "En acordes, rasguea cada forma cuando cambia el cuadro.",
-            "En notas, canta la fundamental: Sol, Re, Mi, Do.",
+            "El rasgueo alterna ↓ y ↑: el ↓ dura un tiempo y medio, el ↑ medio tiempo.",
+            "Primero el acorde solo, después con el rasgueo y al final la progresión.",
         ),
         "Cambios abiertos",
     ),
@@ -97,8 +97,8 @@ LESSONS: tuple[Lesson, ...] = (
         "Una vuelta corta en Lam para afirmar el cambio.",
         (
             "La carta es Lam, Rem, Mi y Lam, a 66 BPM.",
-            "Deja sonar el acorde un compás entero antes de moverte.",
-            "En notas, la línea es La, Re, Mi, La.",
+            "El primer ↓ dura dos tiempos. Después un ↓ y un ↑ de un tiempo.",
+            "Practica cada acorde solo y luego la vuelta completa.",
         ),
         "Ronda de menores",
     ),
@@ -110,7 +110,7 @@ LESSONS: tuple[Lesson, ...] = (
             "Va a 124 BPM, el tempo de la canción, en compás de cuatro.",
             "La armonía es Mim, Sim7, Lam y, en el último compás, Mim y Si7. Sim7 va sin cejilla.",
             "El primer rasgueo dura un tiempo; los cinco siguientes, medio tiempo.",
-            "No incluye la letra. En notas: Mi, Si, La, Mi, Si.",
+            "No incluye la letra. Practica Mim, Sim7, Lam, Mim y Si7.",
         ),
         "Lamento boliviano",
     ),
