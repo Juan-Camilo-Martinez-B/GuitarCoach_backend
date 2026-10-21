@@ -1,6 +1,6 @@
 """Repositorios SQLAlchemy. Traducen filas a entidades y al revés."""
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -10,6 +10,7 @@ from app.domain.entities.attempt import Attempt, ChordMetric
 from app.domain.entities.report import Report, ReportContent
 from app.domain.entities.scrape_job import ScrapeJob
 from app.domain.entities.song import ChartChord, Song
+from app.domain.entities.study import StudyPlan
 from app.domain.entities.user import User
 from app.domain.value_objects.bpm import Bpm
 from app.domain.value_objects.chord import Chord
@@ -17,9 +18,12 @@ from app.domain.value_objects.hit_result import HitResult
 from app.infrastructure.db.models import (
     AttemptModel,
     ChordMetricModel,
+    LessonProgressModel,
     ReportModel,
     ScrapeJobModel,
     SongModel,
+    SongStudyModel,
+    StudyCheckinModel,
     UserModel,
 )
 
@@ -154,6 +158,25 @@ class SqlSongRepository:
         )
         return None if row is None else _song_to_entity(row)
 
+    async def find_by_content_hash(self, content_hash: str) -> Song | None:
+        row = await self._session.scalar(
+            select(SongModel).where(SongModel.content_hash == content_hash)
+        )
+        return None if row is None else _song_to_entity(row)
+
+    async def update_chart(self, song_id: int, song: Song) -> Song | None:
+        row = await self._session.get(SongModel, song_id)
+        if row is None:
+            return None
+        row.song_key = song.song_key
+        row.bpm = song.bpm.value
+        row.chords = [
+            {"bar": chord.bar, "beat": chord.beat, "chord": chord.chord.symbol}
+            for chord in song.chords
+        ]
+        await self._session.flush()
+        return _song_to_entity(row)
+
 
 class SqlAttemptRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -287,6 +310,58 @@ class SqlJobRepository:
         row.updated_at = job.updated_at
 
 
+class SqlLessonRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def completed(self, user_id: UUID) -> dict[str, datetime]:
+        rows = await self._session.scalars(
+            select(LessonProgressModel).where(LessonProgressModel.user_id == user_id)
+        )
+        return {row.lesson_id: row.updated_at for row in rows}
+
+    async def mark_completed(self, user_id: UUID, lesson_id: str, when: datetime) -> None:
+        row = await self._session.get(LessonProgressModel, (user_id, lesson_id))
+        if row is None:
+            self._session.add(
+                LessonProgressModel(
+                    user_id=user_id,
+                    lesson_id=lesson_id,
+                    status="completed",
+                    updated_at=when,
+                )
+            )
+            return
+        row.updated_at = when
+
+    async def reviewed_on(self, user_id: UUID, day: date) -> bool:
+        row = await self._session.get(StudyCheckinModel, (user_id, day))
+        return row is not None
+
+    async def mark_reviewed(self, user_id: UUID, day: date) -> None:
+        if await self.reviewed_on(user_id, day):
+            return
+        self._session.add(StudyCheckinModel(user_id=user_id, reviewed_on=day))
+
+
+class SqlStudyRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, song_id: int) -> StudyPlan | None:
+        row = await self._session.get(SongStudyModel, song_id)
+        if row is None:
+            return None
+        return StudyPlan.from_dict(row.plan)
+
+    async def save(self, song_id: int, plan: StudyPlan) -> None:
+        row = await self._session.get(SongStudyModel, song_id)
+        if row is None:
+            self._session.add(SongStudyModel(song_id=song_id, plan=plan.as_dict()))
+            return
+        row.plan = plan.as_dict()
+
+
 class SqlUnitOfWork:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -295,6 +370,8 @@ class SqlUnitOfWork:
         self.attempts = SqlAttemptRepository(session)
         self.reports = SqlReportRepository(session)
         self.jobs = SqlJobRepository(session)
+        self.lessons = SqlLessonRepository(session)
+        self.studies = SqlStudyRepository(session)
 
     async def commit(self) -> None:
         await self._session.commit()

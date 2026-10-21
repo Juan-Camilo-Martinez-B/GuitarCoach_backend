@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     environment: str = "local"
     log_level: str = "INFO"
     database_url: str = "postgresql+asyncpg://guitarcoach:guitarcoach@localhost:54329/guitarcoach"
+    use_database: bool = False
     jwt_secret: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_ttl_minutes: int = 30

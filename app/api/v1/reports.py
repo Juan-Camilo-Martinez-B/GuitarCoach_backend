@@ -5,13 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Header, Request
 from pydantic import BaseModel
 
+from app.api.deps import current_uow
 from app.api.v1.attempts import _bearer_user_id
 from app.application.security import SystemClock
 from app.application.use_cases.create_report import CreateReport
 from app.core.config import Settings
 from app.domain.entities.report import Report
 from app.domain.errors import NotFoundError
-from app.domain.interfaces.repositories import UnitOfWork
 from app.infrastructure.ai.gemini_tutor import GeminiTutor
 
 router = APIRouter(tags=["reports"])
@@ -46,7 +46,7 @@ async def create_report(
     authorization: str = Header(),
 ) -> ReportResponse:
     settings: Settings = request.app.state.settings
-    uow: UnitOfWork = request.app.state.uow
+    uow = current_uow(request)
     user_id = _bearer_user_id(authorization, settings)
     tutor = request.app.state.tutor
     if not isinstance(tutor, GeminiTutor) and not hasattr(tutor, "advise"):
@@ -61,7 +61,7 @@ async def create_report(
 
 @router.get("/attempts/{attempt_id}/report")
 async def get_report(attempt_id: UUID, request: Request) -> ReportResponse:
-    uow: UnitOfWork = request.app.state.uow
+    uow = current_uow(request)
     report = await uow.reports.get_by_attempt(attempt_id)
     if report is None:
         raise NotFoundError("El informe todavía no está listo.")

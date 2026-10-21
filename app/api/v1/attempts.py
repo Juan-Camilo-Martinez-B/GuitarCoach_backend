@@ -5,11 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Header, Request
 from pydantic import BaseModel, Field
 
+from app.api.deps import current_uow
 from app.application.security import JwtTokenIssuer, SystemClock
 from app.application.use_cases.register_attempt import RegisterAttempt, TelemetryEvent
 from app.core.config import Settings
 from app.domain.errors import AuthenticationError
-from app.domain.interfaces.repositories import UnitOfWork
 from app.domain.services.attempt_assessor import AttemptAssessor
 
 router = APIRouter(tags=["attempts"])
@@ -57,7 +57,7 @@ async def create_attempt(
     authorization: str = Header(),
 ) -> AttemptResponse:
     settings: Settings = request.app.state.settings
-    uow: UnitOfWork = request.app.state.uow
+    uow = current_uow(request)
     attempt = await RegisterAttempt(
         uow,
         AttemptAssessor(),

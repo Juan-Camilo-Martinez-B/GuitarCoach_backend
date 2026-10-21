@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from app.api.deps import current_uow
 from app.application.security import (
     ArgonPasswordHasher,
     JwtTokenIssuer,
@@ -10,7 +11,6 @@ from app.application.security import (
 )
 from app.application.use_cases.auth import LoginUser, RegisterUser
 from app.core.config import Settings
-from app.infrastructure.db.memory import InMemoryUnitOfWork
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -37,13 +37,6 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
-def get_memory(request: Request) -> InMemoryUnitOfWork:
-    uow = request.app.state.uow
-    if not isinstance(uow, InMemoryUnitOfWork):
-        raise RuntimeError("El almacén de usuarios no está configurado.")
-    return uow
-
-
 def _settings(request: Request) -> Settings:
     settings = request.app.state.settings
     if not isinstance(settings, Settings):
@@ -53,7 +46,7 @@ def _settings(request: Request) -> Settings:
 
 @router.post("/register", status_code=201)
 async def register(body: RegisterBody, request: Request) -> UserResponse:
-    uow = get_memory(request)
+    uow = current_uow(request)
     user = await RegisterUser(uow.users, ArgonPasswordHasher(), SystemClock()).execute(
         body.email,
         body.password,
@@ -66,7 +59,7 @@ async def register(body: RegisterBody, request: Request) -> UserResponse:
 @router.post("/login")
 async def login(body: LoginBody, request: Request) -> TokenResponse:
     settings = _settings(request)
-    uow = get_memory(request)
+    uow = current_uow(request)
     clock = SystemClock()
     issuer = JwtTokenIssuer(
         settings.jwt_secret,

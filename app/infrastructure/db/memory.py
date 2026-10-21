@@ -1,12 +1,13 @@
 """Adaptador en memoria para pruebas y para el proceso local antes de SQL."""
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from app.domain.entities.attempt import Attempt, ChordMetric
 from app.domain.entities.report import Report
 from app.domain.entities.scrape_job import ScrapeJob
 from app.domain.entities.song import Song
+from app.domain.entities.study import StudyPlan
 from app.domain.entities.user import User
 
 
@@ -59,6 +60,30 @@ class InMemorySongs:
 
     async def find_by_source_url(self, source_url: str) -> Song | None:
         return next((song for song in self._items.values() if song.source_url == source_url), None)
+
+    async def find_by_content_hash(self, content_hash: str) -> Song | None:
+        return next(
+            (song for song in self._items.values() if song.content_hash == content_hash),
+            None,
+        )
+
+    async def update_chart(self, song_id: int, song: Song) -> Song | None:
+        current = self._items.get(song_id)
+        if current is None:
+            return None
+        stored = Song(
+            title=song.title,
+            artist=song.artist,
+            song_key=song.song_key,
+            bpm=song.bpm,
+            chords=song.chords,
+            source_url=song.source_url,
+            source_name=song.source_name,
+            content_hash=song.content_hash,
+            id=song_id,
+        )
+        self._items[song_id] = stored
+        return stored
 
 
 class InMemoryAttempts:
@@ -119,6 +144,37 @@ class InMemoryJobs:
         self._items[job.id] = job
 
 
+class InMemoryLessons:
+    def __init__(self) -> None:
+        self._done: dict[tuple[UUID, str], datetime] = {}
+        self._reviews: set[tuple[UUID, date]] = set()
+
+    async def completed(self, user_id: UUID) -> dict[str, datetime]:
+        return {
+            lesson_id: when for (owner, lesson_id), when in self._done.items() if owner == user_id
+        }
+
+    async def mark_completed(self, user_id: UUID, lesson_id: str, when: datetime) -> None:
+        self._done[(user_id, lesson_id)] = when
+
+    async def reviewed_on(self, user_id: UUID, day: date) -> bool:
+        return (user_id, day) in self._reviews
+
+    async def mark_reviewed(self, user_id: UUID, day: date) -> None:
+        self._reviews.add((user_id, day))
+
+
+class InMemoryStudies:
+    def __init__(self) -> None:
+        self._items: dict[int, StudyPlan] = {}
+
+    async def get(self, song_id: int) -> StudyPlan | None:
+        return self._items.get(song_id)
+
+    async def save(self, song_id: int, plan: StudyPlan) -> None:
+        self._items[song_id] = plan
+
+
 class InMemoryUnitOfWork:
     def __init__(self) -> None:
         self.users = InMemoryUsers()
@@ -126,6 +182,8 @@ class InMemoryUnitOfWork:
         self.attempts = InMemoryAttempts()
         self.reports = InMemoryReports(self.attempts)
         self.jobs = InMemoryJobs()
+        self.lessons = InMemoryLessons()
+        self.studies = InMemoryStudies()
 
     async def commit(self) -> None:
         return None

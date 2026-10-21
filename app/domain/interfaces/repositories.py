@@ -1,6 +1,6 @@
 """Puertos de persistencia. La infraestructura los implementa; el dominio no importa SQLAlchemy."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -8,6 +8,7 @@ from app.domain.entities.attempt import Attempt, ChordMetric
 from app.domain.entities.report import Report
 from app.domain.entities.scrape_job import ScrapeJob
 from app.domain.entities.song import Song
+from app.domain.entities.study import StudyPlan
 from app.domain.entities.user import User
 
 
@@ -27,6 +28,10 @@ class SongRepository(Protocol):
     async def search(self, query: str) -> tuple[Song, ...]: ...
 
     async def find_by_source_url(self, source_url: str) -> Song | None: ...
+
+    async def find_by_content_hash(self, content_hash: str) -> Song | None: ...
+
+    async def update_chart(self, song_id: int, song: Song) -> Song | None: ...
 
 
 class AttemptRepository(Protocol):
@@ -57,12 +62,30 @@ class ScrapeJobRepository(Protocol):
     async def save(self, job: ScrapeJob) -> None: ...
 
 
+class LessonRepository(Protocol):
+    async def completed(self, user_id: UUID) -> dict[str, datetime]: ...
+
+    async def mark_completed(self, user_id: UUID, lesson_id: str, when: datetime) -> None: ...
+
+    async def reviewed_on(self, user_id: UUID, day: date) -> bool: ...
+
+    async def mark_reviewed(self, user_id: UUID, day: date) -> None: ...
+
+
+class StudyRepository(Protocol):
+    async def get(self, song_id: int) -> StudyPlan | None: ...
+
+    async def save(self, song_id: int, plan: StudyPlan) -> None: ...
+
+
 class UnitOfWork(Protocol):
     users: UserRepository
     songs: SongRepository
     attempts: AttemptRepository
     reports: ReportRepository
     jobs: ScrapeJobRepository
+    lessons: LessonRepository
+    studies: StudyRepository
 
     async def commit(self) -> None: ...
 
