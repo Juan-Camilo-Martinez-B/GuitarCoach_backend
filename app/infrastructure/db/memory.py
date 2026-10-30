@@ -4,9 +4,10 @@ from datetime import date, datetime
 from uuid import UUID
 
 from app.domain.entities.attempt import Attempt, ChordMetric
+from app.domain.entities.guide import GuideRecord
 from app.domain.entities.report import Report
 from app.domain.entities.scrape_job import ScrapeJob
-from app.domain.entities.song import Song
+from app.domain.entities.song import PRIVATE_SOURCES, Song
 from app.domain.entities.study import StudyPlan
 from app.domain.entities.user import User
 
@@ -55,7 +56,8 @@ class InMemorySongs:
         return tuple(
             song
             for song in self._items.values()
-            if needle in song.title.casefold() or needle in song.artist.casefold()
+            if song.source_name not in PRIVATE_SOURCES
+            and (needle in song.title.casefold() or needle in song.artist.casefold())
         )
 
     async def find_by_source_url(self, source_url: str) -> Song | None:
@@ -175,6 +177,34 @@ class InMemoryStudies:
         self._items[song_id] = plan
 
 
+class InMemoryGuides:
+    def __init__(self) -> None:
+        self._items: dict[UUID, GuideRecord] = {}
+
+    async def add(self, record: GuideRecord) -> None:
+        self._items[record.id] = record
+
+    async def get(self, guide_id: UUID) -> GuideRecord | None:
+        return self._items.get(guide_id)
+
+    async def list_for_owner(self, owner_id: UUID) -> tuple[GuideRecord, ...]:
+        owned = (item for item in self._items.values() if item.owner_id == owner_id)
+        return tuple(sorted(owned, key=lambda item: item.updated_at, reverse=True))
+
+    async def find_by_hash(self, owner_id: UUID, content_hash: str) -> GuideRecord | None:
+        return next(
+            (
+                item
+                for item in self._items.values()
+                if item.owner_id == owner_id and item.content_hash == content_hash
+            ),
+            None,
+        )
+
+    async def save(self, record: GuideRecord) -> None:
+        self._items[record.id] = record
+
+
 class InMemoryUnitOfWork:
     def __init__(self) -> None:
         self.users = InMemoryUsers()
@@ -184,6 +214,7 @@ class InMemoryUnitOfWork:
         self.jobs = InMemoryJobs()
         self.lessons = InMemoryLessons()
         self.studies = InMemoryStudies()
+        self.guides = InMemoryGuides()
 
     async def commit(self) -> None:
         return None

@@ -1,5 +1,6 @@
 """Punto de entrada de la API."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -13,6 +14,7 @@ from app.api.middleware.rate_limit import SlidingWindowLimiter, install_auth_rat
 from app.api.middleware.security import install_security
 from app.api.v1.attempts import router as attempts_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.guides import router as guides_router
 from app.api.v1.health import router as health_router
 from app.api.v1.lessons import router as lessons_router
 from app.api.v1.progress import router as progress_router
@@ -71,6 +73,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_exception_handlers(app)
     install_security(app, active.cors_origins)
     install_auth_rate_limit(app, SlidingWindowLimiter(active.auth_requests_per_minute))
+    # El análisis de audio usa mucha CPU: uno a la vez y un tope diario por usuario.
+    app.state.audio_slots = asyncio.Semaphore(1)
+    app.state.audio_limiter = SlidingWindowLimiter(active.daily_audio_limit, 24 * 60 * 60)
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(attempts_router)
@@ -78,6 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(reports_router)
     app.include_router(progress_router)
     app.include_router(lessons_router)
+    app.include_router(guides_router)
     return app
 
 

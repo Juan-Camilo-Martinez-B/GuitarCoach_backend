@@ -3,13 +3,14 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.attempt import Attempt, ChordMetric
+from app.domain.entities.guide import GuideRecord, SongGuide
 from app.domain.entities.report import Report, ReportContent
 from app.domain.entities.scrape_job import ScrapeJob
-from app.domain.entities.song import ChartChord, Song
+from app.domain.entities.song import PRIVATE_SOURCES, ChartChord, Song
 from app.domain.entities.study import StudyPlan
 from app.domain.entities.user import User
 from app.domain.value_objects.bpm import Bpm
@@ -21,6 +22,7 @@ from app.infrastructure.db.models import (
     LessonProgressModel,
     ReportModel,
     ScrapeJobModel,
+    SongGuideModel,
     SongModel,
     SongStudyModel,
     StudyCheckinModel,
@@ -147,7 +149,13 @@ class SqlSongRepository:
         needle = f"%{query.strip()}%"
         rows = await self._session.scalars(
             select(SongModel).where(
-                or_(SongModel.title.ilike(needle), SongModel.artist.ilike(needle))
+                and_(
+                    or_(SongModel.title.ilike(needle), SongModel.artist.ilike(needle)),
+                    or_(
+                        SongModel.source_name.is_(None),
+                        SongModel.source_name.not_in(PRIVATE_SOURCES),
+                    ),
+                )
             )
         )
         return tuple(_song_to_entity(row) for row in rows)
@@ -362,6 +370,65 @@ class SqlStudyRepository:
         row.plan = plan.as_dict()
 
 
+class SqlGuideRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, record: GuideRecord) -> None:
+        self._session.add(
+            SongGuideModel(
+                id=record.id,
+                owner_id=record.owner_id,
+                song_id=record.song_id,
+                title=record.guide.title,
+                artist=record.guide.artist,
+                source_kind=record.source_kind,
+                status=record.status,
+                guide=record.guide.as_dict(),
+                content_hash=record.content_hash,
+                created_at=record.created_at,
+                updated_at=record.updated_at,
+            )
+        )
+        await self._session.flush()
+
+    async def get(self, guide_id: UUID) -> GuideRecord | None:
+        row = await self._session.get(SongGuideModel, guide_id)
+        return None if row is None else _guide_to_entity(row)
+
+    async def list_for_owner(self, owner_id: UUID) -> tuple[GuideRecord, ...]:
+        rows = await self._session.scalars(
+            select(SongGuideModel)
+            .where(SongGuideModel.owner_id == owner_id)
+            .order_by(SongGuideModel.updated_at.desc())
+        )
+        return tuple(_guide_to_entity(row) for row in rows)
+
+    async def find_by_hash(self, owner_id: UUID, content_hash: str) -> GuideRecord | None:
+        row = await self._session.scalar(
+            select(SongGuideModel).where(
+                SongGuideModel.owner_id == owner_id,
+                SongGuideModel.content_hash == content_hash,
+            )
+        )
+        return None if row is None else _guide_to_entity(row)
+
+    async def save(self, record: GuideRecord) -> None:
+        row = await self._session.get(SongGuideModel, record.id)
+        if row is None:
+            await self.add(record)
+            return
+        row.song_id = record.song_id
+        row.title = record.guide.title
+        row.artist = record.guide.artist
+        row.source_kind = record.source_kind
+        row.status = record.status
+        row.guide = record.guide.as_dict()
+        row.content_hash = record.content_hash
+        row.updated_at = record.updated_at
+        await self._session.flush()
+
+
 class SqlUnitOfWork:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -372,6 +439,7 @@ class SqlUnitOfWork:
         self.jobs = SqlJobRepository(session)
         self.lessons = SqlLessonRepository(session)
         self.studies = SqlStudyRepository(session)
+        self.guides = SqlGuideRepository(session)
 
     async def commit(self) -> None:
         await self._session.commit()
@@ -452,6 +520,20 @@ def _job_to_entity(row: ScrapeJobModel) -> ScrapeJob:
         status=row.status,
         query=row.query,
         error=row.error,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _guide_to_entity(row: SongGuideModel) -> GuideRecord:
+    return GuideRecord(
+        id=row.id,
+        owner_id=row.owner_id,
+        song_id=row.song_id,
+        source_kind=row.source_kind,
+        status=row.status,
+        guide=SongGuide.from_dict(row.guide),
+        content_hash=row.content_hash,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

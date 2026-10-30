@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Instalar el paquete y las herramientas
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,analysis]"
       - name: Lint
         run: ruff check app tests
       - name: Formato

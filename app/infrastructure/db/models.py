@@ -117,3 +117,19 @@ class ScrapeJobModel(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SongGuideModel(Base):
+    __tablename__ = "song_guides"
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    owner_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("users.id"))
+    song_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("songs.id"), nullable=True)
+    title: Mapped[str] = mapped_column(Text)
+    artist: Mapped[str] = mapped_column(Text)
+    source_kind: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)
+    guide: Mapped[dict[str, object]] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

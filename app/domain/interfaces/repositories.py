@@ -5,6 +5,7 @@ from typing import Protocol
 from uuid import UUID
 
 from app.domain.entities.attempt import Attempt, ChordMetric
+from app.domain.entities.guide import GuideRecord
 from app.domain.entities.report import Report
 from app.domain.entities.scrape_job import ScrapeJob
 from app.domain.entities.song import Song
@@ -78,6 +79,18 @@ class StudyRepository(Protocol):
     async def save(self, song_id: int, plan: StudyPlan) -> None: ...
 
 
+class GuideRepository(Protocol):
+    async def add(self, record: GuideRecord) -> None: ...
+
+    async def get(self, guide_id: UUID) -> GuideRecord | None: ...
+
+    async def list_for_owner(self, owner_id: UUID) -> tuple[GuideRecord, ...]: ...
+
+    async def find_by_hash(self, owner_id: UUID, content_hash: str) -> GuideRecord | None: ...
+
+    async def save(self, record: GuideRecord) -> None: ...
+
+
 class UnitOfWork(Protocol):
     users: UserRepository
     songs: SongRepository
@@ -86,6 +99,7 @@ class UnitOfWork(Protocol):
     jobs: ScrapeJobRepository
     lessons: LessonRepository
     studies: StudyRepository
+    guides: GuideRepository
 
     async def commit(self) -> None: ...
 
