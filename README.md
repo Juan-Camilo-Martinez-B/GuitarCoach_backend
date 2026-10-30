@@ -84,7 +84,7 @@ Cómo la analiza `app/infrastructure/audio/analysis.py`:
 
 Funciona bien con guitarra sola y peor con canciones mezcladas (voz y batería); por eso el resultado es un borrador. Usa mucha CPU: corre en un hilo aparte, de a uno por proceso, con 120 segundos de tope (`AUDIO_TIMEOUT_SECONDS`) y un límite diario por usuario (`DAILY_AUDIO_LIMIT`, 10 por defecto).
 
-Las dependencias son opcionales: `pip install -e ".[analysis]"` instala `librosa` y `soundfile`. Sin ellas el resto de la API funciona y este endpoint responde que el análisis no está instalado. La imagen de Docker no las incluye para no crecer; el CI sí, para correr las pruebas.
+Las dependencias son opcionales: `pip install -e ".[analysis]"` instala `librosa` y `soundfile`. Sin ellas el resto de la API funciona y este endpoint responde que el análisis no está instalado. La imagen de Docker y el CI las incluyen. Con ellas la imagen pesa cerca de 1 GB (numba, scipy y scikit-learn vienen con librosa); `NUMBA_CACHE_DIR` apunta a `/tmp` porque el usuario sin privilegios del contenedor no puede escribir la caché de numba en `site-packages`.
 
 La variante de capa gratuita usa Neon o Supabase y la API de Gemini. El detalle de variables, alertas de presupuesto y Cloud Run está en `docs/despliegue.md`. El registro de la versión 1.0.0 está en `CHANGELOG.md`.
 
