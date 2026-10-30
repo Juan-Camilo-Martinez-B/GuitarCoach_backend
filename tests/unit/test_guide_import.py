@@ -3,7 +3,12 @@
 import pytest
 from app.domain.entities.guide import SongGuide, StrumPattern
 from app.domain.errors import InvalidValueError
-from app.domain.services.guide_import import guide_from_file, guide_from_musicxml, guide_from_text
+from app.domain.services.guide_import import (
+    guide_from_file,
+    guide_from_musicxml,
+    guide_from_text,
+    guide_from_timeline,
+)
 from app.domain.value_objects.chord import Chord
 
 PASTED = """Capo 2
@@ -182,3 +187,22 @@ def test_lee_acordes_como_los_escriben_los_cancioneros(raw: str, symbol: str) ->
 @pytest.mark.parametrize("raw", ["Verso", "x2", "la", "Hm"])
 def test_no_confunde_palabras_con_acordes(raw: str) -> None:
     assert Chord.read(raw) is None
+
+
+def test_el_audio_ubica_el_primer_tiempo_donde_cambian_los_acordes() -> None:
+    # El pulso arrancó en el tiempo 2: cada acorde dura cuatro pero empieza en 3, 7, 11...
+    chords = [(0.0, 3.0, "Am"), (3.0, 4.0, "F"), (7.0, 4.0, "C"), (11.0, 4.0, "G")]
+    guide = guide_from_timeline("Toma", "Ana", 100, chords)
+    assert [(chord.start, chord.beats, chord.chord.symbol) for chord in guide.chords] == [
+        (0.0, 4.0, "Am"),
+        (4.0, 4.0, "F"),
+        (8.0, 4.0, "C"),
+        (12.0, 4.0, "G"),
+    ]
+    assert guide.sections[0].name == "Parte 1"
+
+
+def test_el_audio_alineado_no_se_mueve() -> None:
+    chords = [(0.0, 4.0, "G"), (4.0, 4.0, "D")]
+    guide = guide_from_timeline("Toma", "Ana", 100, chords)
+    assert [chord.start for chord in guide.chords] == [0.0, 4.0]

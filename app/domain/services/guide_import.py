@@ -643,3 +643,80 @@ def _local(tag: str) -> str:
 def _looks_like_xml(text: str) -> bool:
     sample = text.lstrip()[:400]
     return sample.startswith("<?xml") or "<score-partwise" in sample
+
+
+# --- Audio analizado ------------------------------------------------------------------
+
+BARS_PER_PART = 8
+
+
+def align_downbeat(
+    chords: list[tuple[float, float, str]],
+    melody: list[tuple[float, float, int]],
+    beats_per_bar: float,
+) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, int]]]:
+    """Ubica el primer tiempo del compás donde más cambios de acorde caen sobre él.
+
+    El detector de pulso no sabe cuál es el tiempo 1. Los acordes suelen cambiar al empezar
+    el compás, así que se prueba cada desplazamiento y se queda el que más cambios alinea.
+    El primer acorde se alarga hacia atrás para cubrir la anacrusa.
+    """
+    whole = max(1, round(beats_per_bar))
+    starts = [round(start) for start, _, _ in chords]
+    shift = max(
+        range(whole),
+        key=lambda offset: (sum(1 for start in starts if (start + offset) % whole == 0), -offset),
+    )
+    if shift == 0:
+        return chords, melody
+    moved = [(start + shift, beats, symbol) for start, beats, symbol in chords]
+    first_start, first_beats, first_symbol = moved[0]
+    moved[0] = (0.0, first_beats + first_start, first_symbol)
+    return moved, [(start + shift, beats, midi) for start, beats, midi in melody]
+
+
+def guide_from_timeline(
+    title: str,
+    artist: str,
+    bpm: int,
+    chords: list[tuple[float, float, str]],
+    melody: list[tuple[float, float, int]] | None = None,
+    beats_per_bar: float = 4,
+) -> SongGuide:
+    """Arma la guía de un análisis de audio: partes de ocho compases para practicar en bucle."""
+    if not chords:
+        raise InvalidValueError("No hay acordes para armar la guía.")
+    chords, melody = align_downbeat(chords, melody or [], beats_per_bar)
+    guide_chords = tuple(
+        GuideChord(start, beats, Chord.parse(symbol)) for start, beats, symbol in chords
+    )
+    notes = tuple(GuideNote(start, beats, midi) for start, beats, midi in (melody or []))
+    total = max(
+        [chord.start + chord.beats for chord in guide_chords]
+        + [note.start + note.beats for note in notes]
+    )
+    part = BARS_PER_PART * beats_per_bar
+    count = min(MAX_SECTIONS, max(1, -(-int(total) // int(part))))
+    part = max(part, total / count)
+    strum = StrumPattern.basic(beats_per_bar)
+    sections = tuple(
+        GuideSection(
+            f"Parte {index + 1}",
+            index * part,
+            min(part, total - index * part),
+            strum,
+        )
+        for index in range(count)
+        if total - index * part > 0
+    )
+    return SongGuide(
+        title=title.strip() or "Canción",
+        artist=artist.strip() or "Sin artista",
+        song_key=None,
+        bpm=Bpm(min(300, max(20, bpm))),
+        beats_per_bar=beats_per_bar,
+        capo=0,
+        sections=sections,
+        chords=guide_chords,
+        melody=notes,
+    )

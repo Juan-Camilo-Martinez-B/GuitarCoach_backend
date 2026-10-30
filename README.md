@@ -69,6 +69,23 @@ Cómo lee el texto `app/domain/services/guide_import.py`:
 - El rasgueo se escribe en casilleros: `D-DU-UDU` son ocho corcheas en 4/4 (D abajo, U arriba, X apagado, - silencio).
 - MusicXML respeta `divisions`, el compás, los tipos de acorde, las ligaduras y los silencios. Rechaza documentos con entidades.
 
+## Guía desde un audio propio
+
+`POST /guides/from-audio` recibe una grabación del usuario (WAV, MP3, OGG o FLAC, hasta 10 MB y 6 minutos), con título, artista y, si es una sola voz, la opción de detectar la melodía. Devuelve una guía en borrador para corregir en el editor.
+
+Cómo la analiza `app/infrastructure/audio/analysis.py`:
+
+1. Reconoce el formato por los primeros bytes, no por la extensión. Escribe el archivo en un directorio temporal que **se borra siempre** al terminar; el audio nunca llega a la base.
+2. Detecta el pulso con `librosa.beat.beat_track` y calcula el tempo con la mediana entre pulsos.
+3. Separa la parte armónica, calcula un cromagrama CQT y lo agrupa por pulso.
+4. Compara cada pulso con 24 plantillas de tríadas (la fundamental pesa más) y un estado "sin acorde" para el silencio, y suaviza la secuencia con Viterbi.
+5. Ubica el primer tiempo del compás donde más cambios de acorde coinciden (`align_downbeat`) y parte la canción en tramos de ocho compases.
+6. Si se pide, estima la melodía con pYIN. Solo sirve para una voz sola, no para una mezcla.
+
+Funciona bien con guitarra sola y peor con canciones mezcladas (voz y batería); por eso el resultado es un borrador. Usa mucha CPU: corre en un hilo aparte, de a uno por proceso, con 120 segundos de tope (`AUDIO_TIMEOUT_SECONDS`) y un límite diario por usuario (`DAILY_AUDIO_LIMIT`, 10 por defecto).
+
+Las dependencias son opcionales: `pip install -e ".[analysis]"` instala `librosa` y `soundfile`. Sin ellas el resto de la API funciona y este endpoint responde que el análisis no está instalado. La imagen de Docker no las incluye para no crecer; el CI sí, para correr las pruebas.
+
 La variante de capa gratuita usa Neon o Supabase y la API de Gemini. El detalle de variables, alertas de presupuesto y Cloud Run está en `docs/despliegue.md`. El registro de la versión 1.0.0 está en `CHANGELOG.md`.
 
 Copia `.env.example` a `.env` para el resto de variables. En producción `JWT_SECRET` no puede quedar en el valor de desarrollo.
