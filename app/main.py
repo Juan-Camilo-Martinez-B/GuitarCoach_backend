@@ -13,6 +13,7 @@ from app.api.middleware.rate_limit import SlidingWindowLimiter, install_auth_rat
 from app.api.middleware.security import install_security
 from app.api.v1.attempts import router as attempts_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.guides import router as guides_router
 from app.api.v1.health import router as health_router
 from app.api.v1.lessons import router as lessons_router
 from app.api.v1.progress import router as progress_router
@@ -78,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(reports_router)
     app.include_router(progress_router)
     app.include_router(lessons_router)
+    app.include_router(guides_router)
     return app
 
 

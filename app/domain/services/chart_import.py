@@ -1,22 +1,16 @@
-"""Lee ChordPro, texto con acordes y MusicXML. No descarga partituras ajenas."""
+"""Carta plana y plan de estudio a partir de una guía. Los lectores viven en guide_import."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from pathlib import Path
 
+from app.domain.entities.guide import SongGuide
 from app.domain.entities.study import StudyPlan, StudyStep
-from app.domain.errors import InvalidValueError
+from app.domain.services.guide_import import guide_from_file
 from app.domain.value_objects.chord import Chord
 
-_CHORD = re.compile(r"\[([A-G](?:#|b)?(?:maj7|m7|sus2|sus4|dim|aug|m|7)?)\]")
-_DIRECTIVE = re.compile(r"\{([a-zA-Z]+):\s*([^}]*)\}")
-_MELODY_LINE = re.compile(r"(?i)^melody:\s*(.+)$")
-_FIELD = re.compile(r"(?i)^(title|artist|bpm|tempo|key):\s*(.+)$")
 _NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 _SOLFEGE = {
     "C": "Do",
@@ -35,7 +29,6 @@ _SOLFEGE = {
 _FLATS = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
 _OPEN = {"C", "D", "E", "Em", "G", "A", "Am", "Dm"}
 _STRUM = ("abajo", "abajo", "arriba", "arriba", "abajo", "arriba")
-_MAX_BYTES = 200_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,48 +52,22 @@ class ImportedChart:
 
 
 def parse_chart(filename: str, raw: bytes) -> ImportedChart:
-    if len(raw) > _MAX_BYTES:
-        raise InvalidValueError("El archivo supera 200 KB.")
-    name = filename.lower()
-    if name.endswith(".mxl"):
-        raise InvalidValueError("Exporta MusicXML sin comprimir (.musicxml), no .mxl.")
-    text = raw.decode("utf-8-sig", errors="replace")
-    stem = Path(filename).stem or "Cancion"
-    if name.endswith((".musicxml", ".xml")) or _looks_like_xml(text):
-        return parse_musicxml(text, stem)
-    if name.endswith(".txt"):
-        return parse_plain(text, stem)
-    return parse_chordpro(text, stem)
+    guide, _ = guide_from_file(filename, raw)
+    return imported_from_guide(guide)
 
 
-def parse_chordpro(text: str, fallback_title: str) -> ImportedChart:
-    meta, chords, melody = _scan(text)
-    title = meta.get("title") or meta.get("t") or fallback_title
-    artist = meta.get("artist") or meta.get("subtitle") or meta.get("st") or "Archivo"
-    return _chart(title, artist, meta, chords, melody)
-
-
-def parse_plain(text: str, fallback_title: str) -> ImportedChart:
-    return parse_chordpro(text, fallback_title)
-
-
-def parse_musicxml(text: str, fallback_title: str) -> ImportedChart:
-    try:
-        root = ET.fromstring(text)
-    except ET.ParseError as error:
-        raise InvalidValueError("El MusicXML no se pudo leer.") from error
-    title = fallback_title
-    for element in root.iter():
-        if _local(element.tag) == "work-title" and element.text:
-            title = element.text.strip()
-    chords = _xml_chords(root)
-    melody = _xml_melody(root)
-    if not chords and not melody:
-        raise InvalidValueError("El MusicXML no trae acordes ni notas.")
-    if not chords:
-        chords = tuple((bar, beat, note) for bar, beat, note in melody)
-    meta = {"title": title, "artist": "MusicXML", "tempo": "80"}
-    return _chart(title, "MusicXML", meta, chords, melody)
+def imported_from_guide(guide: SongGuide) -> ImportedChart:
+    """La carta plana (compás y pulso desde 1) que usan el estudio y la práctica."""
+    chords = tuple((chord.bar, chord.beat, chord.chord.symbol) for chord in guide.chart())
+    melody = tuple(
+        (
+            int(note.start // guide.beats_per_bar) + 1,
+            round(note.start % guide.beats_per_bar, 4) + 1,
+            _NAMES[note.midi % 12],
+        )
+        for note in guide.melody
+    )
+    return ImportedChart(guide.title, guide.artist, guide.song_key, guide.bpm.value, chords, melody)
 
 
 def build_plan(
@@ -135,122 +102,6 @@ def build_plan(
 
 def solfege(symbol: str) -> str:
     return _SOLFEGE.get(_spell(symbol), symbol)
-
-
-def _chart(
-    title: str,
-    artist: str,
-    meta: dict[str, str],
-    chords: tuple[tuple[int, float, str], ...],
-    melody: tuple[tuple[int, float, str], ...],
-) -> ImportedChart:
-    if not chords:
-        raise InvalidValueError("El archivo no tiene acordes ni notas reconocibles.")
-    bpm_text = meta.get("tempo") or meta.get("bpm") or "80"
-    try:
-        bpm = int(float(bpm_text))
-    except ValueError as error:
-        raise InvalidValueError("El tempo del archivo no es un número.") from error
-    song_key = meta.get("key") or meta.get("k")
-    for _, _, symbol in chords:
-        Chord.parse(symbol)
-    return ImportedChart(title.strip(), artist.strip() or "Archivo", song_key, bpm, chords, melody)
-
-
-def _scan(
-    text: str,
-) -> tuple[dict[str, str], tuple[tuple[int, float, str], ...], tuple[tuple[int, float, str], ...]]:
-    meta: dict[str, str] = {}
-    chord_symbols: list[str] = []
-    melody_symbols: list[str] = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        field = _FIELD.match(line)
-        if field:
-            meta[field.group(1).lower()] = field.group(2).strip()
-            continue
-        melody_match = _MELODY_LINE.match(line)
-        if melody_match:
-            melody_symbols.extend(_notes(melody_match.group(1)))
-            continue
-        for key, value in _DIRECTIVE.findall(line):
-            meta[key.lower()] = value.strip()
-        chord_symbols.extend(match.group(1) for match in _CHORD.finditer(line))
-        if not _CHORD.search(line) and not line.startswith("{"):
-            chord_symbols.extend(_notes(line))
-    return meta, _place(chord_symbols), _place(melody_symbols)
-
-
-def _notes(text: str) -> list[str]:
-    found: list[str] = []
-    for token in text.replace("|", " ").split():
-        try:
-            found.append(Chord.parse(token).symbol)
-        except InvalidValueError:
-            continue
-    return found
-
-
-def _place(symbols: list[str]) -> tuple[tuple[int, float, str], ...]:
-    placed: list[tuple[int, float, str]] = []
-    for index, symbol in enumerate(symbols):
-        placed.append((index // 4 + 1, float(index % 4 + 1), symbol))
-    return tuple(placed)
-
-
-def _xml_chords(root: ET.Element) -> tuple[tuple[int, float, str], ...]:
-    symbols: list[str] = []
-    for element in root.iter():
-        if _local(element.tag) != "harmony":
-            continue
-        step = _child_text(element, "root-step")
-        if not step:
-            continue
-        alter = _child_text(element, "root-alter")
-        kind = _child_text(element, "kind") or ""
-        accidental = "#" if alter == "1" else "b" if alter == "-1" else ""
-        quality = "m" if "minor" in kind else ""
-        symbols.append(f"{step}{accidental}{quality}")
-    return _place(symbols)
-
-
-def _xml_melody(root: ET.Element) -> tuple[tuple[int, float, str], ...]:
-    symbols: list[str] = []
-    for element in root.iter():
-        if _local(element.tag) != "note":
-            continue
-        if any(_local(child.tag) in {"rest", "chord"} for child in element):
-            continue
-        step = None
-        alter = None
-        for child in element.iter():
-            if _local(child.tag) == "step":
-                step = child.text
-            elif _local(child.tag) == "alter":
-                alter = child.text
-        if not step:
-            continue
-        accidental = "#" if alter == "1" else "b" if alter == "-1" else ""
-        symbols.append(f"{step}{accidental}")
-    return _place(symbols)
-
-
-def _child_text(element: ET.Element, name: str) -> str | None:
-    for child in element.iter():
-        if _local(child.tag) == name and child.text:
-            return child.text.strip()
-    return None
-
-
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
-
-
-def _looks_like_xml(text: str) -> bool:
-    sample = text.lstrip()[:400]
-    return sample.startswith("<?xml") or "<score-partwise" in sample
 
 
 def _difficulty(symbols: tuple[str, ...]) -> str:

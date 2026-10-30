@@ -6,6 +6,9 @@ from app.domain.errors import InvalidValueError
 from app.domain.value_objects.bpm import Bpm
 from app.domain.value_objects.chord import Chord
 
+# Canciones que salen de la guía o del archivo de un usuario: no aparecen en la búsqueda pública.
+PRIVATE_SOURCES = ("guia", "archivo")
+
 
 @dataclass(frozen=True, slots=True)
 class ChartChord:
