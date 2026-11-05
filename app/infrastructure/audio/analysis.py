@@ -46,6 +46,8 @@ class AudioAnalysis:
     bpm: int
     chords: tuple[AnalyzedChord, ...]
     melody: tuple[AnalyzedNote, ...]
+    tempo: tuple[tuple[float, int], ...] = ()
+    onsets: tuple[tuple[float, float], ...] = ()
 
 
 def sniff_audio(raw: bytes) -> str | None:
@@ -148,7 +150,68 @@ def analyze_file(path: Path, *, melody: bool = False) -> AudioAnalysis:
         raise InvalidValueError("No se reconocieron acordes en el audio.")
 
     notes = _melody(librosa, np, signal, rate, beat_times) if melody else ()
-    return AudioAnalysis(bpm=bpm, chords=tuple(chords), melody=notes)
+    beat_list = [float(beat) for beat in beat_times]
+    onset_times = [
+        float(time)
+        for time in librosa.onset.onset_detect(y=signal, sr=rate, hop_length=HOP, units="time")
+    ]
+    tempo = tuple(tempo_points_from_beats(beat_list))
+    onsets = tuple(onset_spans(cluster_onsets(onset_times), beat_list))
+    return AudioAnalysis(bpm=bpm, chords=tuple(chords), melody=notes, tempo=tempo, onsets=onsets)
+
+
+def cluster_onsets(times: list[float], window: float = 0.04) -> list[float]:
+    """Junta los ataques de un mismo rasgueo. El barrido de la púa no es otro golpe."""
+    grouped: list[float] = []
+    for time in sorted(times):
+        if grouped and time - grouped[-1] < window:
+            continue
+        grouped.append(time)
+    return grouped
+
+
+def tempo_points_from_beats(beat_times: list[float]) -> list[tuple[float, int]]:
+    """Un punto nuevo cuando el intervalo entre pulsos cambia más de un 8 %."""
+    points: list[tuple[float, int]] = []
+    current: float | None = None
+    for index in range(len(beat_times) - 1):
+        gap = beat_times[index + 1] - beat_times[index]
+        if gap <= 1e-4:
+            continue
+        bpm = 60.0 / gap
+        if current is None or abs(bpm - current) / current > 0.08:
+            clamped = min(300, max(20, round(bpm)))
+            points.append((float(index), round(60_000_000 / clamped)))
+            current = float(clamped)
+    if not points:
+        points = [(0.0, round(60_000_000 / 80))]
+    if points[0][0] > 1e-6:
+        points.insert(0, (0.0, points[0][1]))
+    return points
+
+
+def onset_spans(onset_times: list[float], beat_times: list[float]) -> list[tuple[float, float]]:
+    """Pulso y hueco de cada onset, medidos sobre la rejilla de negras detectada."""
+    if len(beat_times) < 2 or not onset_times:
+        return []
+    pulses: list[float] = []
+    last = beat_times[-1]
+    first = beat_times[0]
+    for onset in onset_times:
+        if onset < first - 1e-3 or onset > last + 1e-3:
+            continue
+        index = 0
+        while index + 1 < len(beat_times) and beat_times[index + 1] < onset:
+            index += 1
+        gap = beat_times[min(index + 1, len(beat_times) - 1)] - beat_times[index]
+        if gap <= 1e-4:
+            continue
+        pulses.append(index + (onset - beat_times[index]) / gap)
+    spans: list[tuple[float, float]] = []
+    for index, pulse in enumerate(pulses):
+        following = pulses[index + 1] if index + 1 < len(pulses) else pulse + 0.5
+        spans.append((round(pulse, 6), round(max(0.05, following - pulse), 6)))
+    return spans
 
 
 def _melody(

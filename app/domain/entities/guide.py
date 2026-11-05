@@ -17,13 +17,17 @@ from app.domain.errors import InvalidValueError
 from app.domain.value_objects.bpm import Bpm
 from app.domain.value_objects.chord import Chord
 
-GUIDE_VERSION = 1
+GUIDE_VERSION = 2
 SOURCE_KINDS = ("pegado", "chordpro", "musicxml", "audio", "editor")
 STATUSES = ("borrador", "revisada")
 STRUM_DIRECTIONS = ("abajo", "arriba", "apagado")
+STRUM_CONTACTS = ("golpe", "chuck", "aire")
+EVENT_ORIGINS = ("escrito", "inferido", "editado", "leccion")
 MAX_SECTIONS = 40
 MAX_CHORDS = 2000
 MAX_NOTES = 4000
+MAX_EVENTS = 8000
+MAX_TEMPO = 64
 MAX_TEXT = 120
 MIN_MIDI = 28
 MAX_MIDI = 100
@@ -85,9 +89,37 @@ class StrumPattern:
             raise InvalidValueError("Las duraciones del rasgueo deben ser positivas.")
 
     @classmethod
+    def lesson(cls, beats_per_bar: float) -> StrumPattern:
+        """Rasgueo que el alumno puede copiar cuando la carta no trae el suyo."""
+        if abs(beats_per_bar - 4) < 0.05:
+            return cls(
+                ("abajo", "abajo", "arriba", "abajo", "arriba"),
+                (1.0, 1.0, 0.5, 0.5, 1.0),
+            )
+        if abs(beats_per_bar - 3) < 0.05:
+            return cls(("abajo", "arriba"), (2.0, 1.0))
+        if abs(beats_per_bar - 2) < 0.05:
+            return cls(("abajo", "arriba"), (1.0, 1.0))
+        return cls.basic(beats_per_bar)
+
+    @classmethod
     def basic(cls, beats_per_bar: float) -> StrumPattern:
         whole = max(1, round(beats_per_bar))
         return cls(("abajo",) * whole, (beats_per_bar / whole,) * whole)
+
+    @classmethod
+    def groove(cls, section_name: str, beats_per_bar: float) -> StrumPattern:
+        """Rasgueo de oído según la sección, cuando el archivo no trae el suyo."""
+        role = _groove_role(section_name)
+        if abs(beats_per_bar - 4) < 0.05:
+            directions, beats = _GROOVE_4[role]
+        elif abs(beats_per_bar - 3) < 0.05:
+            directions, beats = _GROOVE_3[role]
+        elif abs(beats_per_bar - 2) < 0.05:
+            directions, beats = ("abajo", "arriba"), (1.0, 1.0)
+        else:
+            return cls.basic(beats_per_bar)
+        return cls(directions, beats)
 
     @classmethod
     def from_text(cls, text: str, beats_per_bar: float) -> StrumPattern:
@@ -127,6 +159,218 @@ class StrumPattern:
             tuple(str(direction) for direction in directions),
             tuple(_number(beat, "La duración del golpe") for beat in beats),
         )
+
+
+def _groove_role(name: str) -> str:
+    text = name.lower()
+    if "pre-chorus" in text or "prechorus" in text or "pre-coro" in text or "pre coro" in text:
+        return "pre"
+    if "intro" in text or "entrada" in text:
+        return "intro"
+    if any(word in text for word in ("outro", "final", "coda", "ending")):
+        return "final"
+    if any(word in text for word in ("chorus", "coro", "estribillo")):
+        return "coro"
+    if "bridge" in text or "puente" in text:
+        return "puente"
+    return "verso"
+
+
+# Compás de 4/4 en corcheas. El cuerpo del tema deja pasar la mano:
+# 1 + 2 + 3 + 4 +
+# D   D   U D U
+# El coro rellena el contratiempo del segundo tiempo: D D U U D U.
+_ISLAND: tuple[tuple[str, ...], tuple[float, ...]] = (
+    ("abajo", "abajo", "arriba", "abajo", "arriba"),
+    (1.0, 1.0, 0.5, 0.5, 1.0),
+)
+_CHORUS: tuple[tuple[str, ...], tuple[float, ...]] = (
+    ("abajo", "abajo", "arriba", "arriba", "abajo", "arriba"),
+    (1.0, 0.5, 0.5, 0.5, 0.5, 1.0),
+)
+_GROOVE_4: dict[str, tuple[tuple[str, ...], tuple[float, ...]]] = {
+    "intro": _ISLAND,
+    "verso": _ISLAND,
+    "pre": _ISLAND,
+    "coro": _CHORUS,
+    "puente": _ISLAND,
+    "final": _ISLAND,
+}
+
+
+def us_per_quarter(bpm: int) -> int:
+    """Microsegundos de una negra. 500.000 son 120 BPM."""
+    return round(60_000_000 / bpm)
+
+
+def tempo_from_bpm(bpm: int) -> tuple[TempoPoint, ...]:
+    return (TempoPoint(0.0, us_per_quarter(bpm)),)
+
+
+def _is_basic(pattern: StrumPattern, beats_per_bar: float) -> bool:
+    whole = max(1, round(beats_per_bar))
+    if len(pattern.directions) != whole or any(
+        direction != "abajo" for direction in pattern.directions
+    ):
+        return False
+    beat = beats_per_bar / whole
+    return all(abs(value - beat) < 1e-3 for value in pattern.beats)
+
+
+def expand_pattern(
+    start: float,
+    beats: float,
+    beats_per_bar: float,
+    pattern: StrumPattern,
+    origin: str,
+) -> tuple[StrumEvent, ...]:
+    """Repite el patrón una vez por compás. Cada golpe conserva su duración."""
+    events: list[StrumEvent] = []
+    bar = 0.0
+    while start + bar < start + beats - _EPSILON and len(events) < MAX_EVENTS:
+        cursor = start + bar
+        for direction, length in zip(pattern.directions, pattern.beats, strict=True):
+            if cursor >= start + beats - _EPSILON:
+                break
+            span = min(length, start + beats - cursor)
+            if span <= _EPSILON:
+                break
+            contact = "chuck" if direction == "apagado" else "golpe"
+            events.append(StrumEvent(_time(cursor), _time(span), direction, contact, 0.82, origin))
+            cursor += length
+        bar += beats_per_bar
+    return tuple(events)
+
+
+def expand_slots(
+    text: str,
+    start: float,
+    beats: float,
+    beats_per_bar: float,
+    origin: str,
+) -> tuple[StrumEvent, ...]:
+    """Cada carácter es un casillero. El guion es aire: no ataca y no ahoga."""
+    slots = [char for char in text.upper() if not char.isspace()]
+    if not slots:
+        raise InvalidValueError("El rasgueo no tiene casilleros.")
+    size = beats_per_bar / len(slots)
+    events: list[StrumEvent] = []
+    bar = 0.0
+    while start + bar < start + beats - _EPSILON and len(events) < MAX_EVENTS:
+        cursor = start + bar
+        for slot in slots:
+            if cursor >= start + beats - _EPSILON:
+                break
+            if slot in _STRUM_RESTS:
+                events.append(StrumEvent(_time(cursor), _time(size), "abajo", "aire", 0.0, origin))
+            else:
+                direction = _STRUM_LETTERS[slot]
+                contact = "chuck" if direction == "apagado" else "golpe"
+                events.append(
+                    StrumEvent(_time(cursor), _time(size), direction, contact, 0.82, origin)
+                )
+            cursor += size
+        bar += beats_per_bar
+    return tuple(events)
+
+
+def lesson_melody(chords: tuple[GuideChord, ...]) -> tuple[GuideNote, ...]:
+    """Fundamental y tercera de cada acorde, en un registro que se puede cantar."""
+    pitches = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
+    notes: list[GuideNote] = []
+    previous = 67
+    for chord in chords:
+        step = pitches[chord.chord.root]
+        if chord.chord.accidental == "#":
+            step += 1
+        elif chord.chord.accidental == "b":
+            step -= 1
+        midi = 60 + step
+        while midi < previous - 5:
+            midi += 12
+        while midi > previous + 6:
+            midi -= 12
+        midi = min(81, max(60, midi))
+        quality = chord.chord.quality
+        if quality.startswith("m") and not quality.startswith("maj"):
+            color = 3
+        elif "sus2" in quality:
+            color = 2
+        elif "sus" in quality:
+            color = 5
+        elif quality.startswith("dim"):
+            color = 3
+        else:
+            color = 4
+        if chord.beats >= 2:
+            half = chord.beats / 2
+            notes.append(GuideNote(_time(chord.start), _time(half), midi))
+            notes.append(
+                GuideNote(_time(chord.start + half), _time(chord.beats - half), midi + color)
+            )
+            previous = midi + color
+        else:
+            notes.append(GuideNote(_time(chord.start), _time(chord.beats), midi))
+            previous = midi
+        if len(notes) >= MAX_NOTES:
+            break
+    return tuple(notes)
+
+
+def events_from_chords(chords: tuple[GuideChord, ...], origin: str) -> tuple[StrumEvent, ...]:
+    """Un golpe al inicio de cada acorde, con la duración que el archivo escribió."""
+    return tuple(
+        StrumEvent(_time(chord.start), _time(chord.beats), "abajo", "golpe", 0.82, origin)
+        for chord in chords[:MAX_EVENTS]
+    )
+
+
+_GROOVE_3: dict[str, tuple[tuple[str, ...], tuple[float, ...]]] = {
+    "intro": (("abajo", "arriba"), (2.0, 1.0)),
+    "verso": (("abajo", "arriba", "arriba"), (1.0, 1.0, 1.0)),
+    "pre": (("abajo", "abajo", "arriba"), (1.0, 1.0, 1.0)),
+    "coro": (("abajo", "arriba") * 3, (0.5,) * 6),
+    "puente": (("abajo", "arriba"), (2.0, 1.0)),
+    "final": (("abajo", "arriba"), (2.0, 1.0)),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class TempoPoint:
+    """Reloj desde este pulso: microsegundos de una negra, constantes hasta el siguiente."""
+
+    pulse: float
+    us_per_quarter: int
+
+    def __post_init__(self) -> None:
+        if self.pulse < 0:
+            raise InvalidValueError("El punto de tempo no puede empezar antes del primer pulso.")
+        if not 200_000 <= self.us_per_quarter <= 3_000_000:
+            raise InvalidValueError("El tempo de un tramo debe estar entre 20 y 300 BPM.")
+
+
+@dataclass(frozen=True, slots=True)
+class StrumEvent:
+    """Un casillero de la mano derecha. El aire no ataca y no ahoga el acorde anterior."""
+
+    pulse: float
+    span: float
+    direction: str
+    contact: str
+    velocity: float
+    origin: str
+
+    def __post_init__(self) -> None:
+        if self.pulse < 0 or self.span <= 0:
+            raise InvalidValueError("Cada golpe necesita un pulso y un hueco positivos.")
+        if self.direction not in STRUM_DIRECTIONS:
+            raise InvalidValueError("La dirección del golpe no es válida.")
+        if self.contact not in STRUM_CONTACTS:
+            raise InvalidValueError("El contacto del golpe no es válido.")
+        if self.origin not in EVENT_ORIGINS:
+            raise InvalidValueError("La procedencia del golpe no es válida.")
+        if not 0 <= self.velocity <= 1:
+            raise InvalidValueError("La dinámica del golpe va de 0 a 1.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +424,8 @@ class SongGuide:
     sections: tuple[GuideSection, ...]
     chords: tuple[GuideChord, ...]
     melody: tuple[GuideNote, ...] = ()
+    tempo: tuple[TempoPoint, ...] = ()
+    events: tuple[StrumEvent, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.title.strip() or not self.artist.strip():
@@ -194,10 +440,18 @@ class SongGuide:
             raise InvalidValueError(f"La guía necesita entre 1 y {MAX_SECTIONS} secciones.")
         if len(self.chords) > MAX_CHORDS or len(self.melody) > MAX_NOTES:
             raise InvalidValueError("La guía es demasiado larga.")
+        if len(self.events) > MAX_EVENTS or len(self.tempo) > MAX_TEMPO:
+            raise InvalidValueError("La guía es demasiado larga.")
         ordered = sorted(self.sections, key=lambda section: section.start)
         for previous, current in zip(ordered, ordered[1:], strict=False):
             if current.start < previous.end - _EPSILON:
                 raise InvalidValueError("Las secciones no pueden superponerse.")
+        if not self.tempo:
+            object.__setattr__(self, "tempo", tempo_from_bpm(self.bpm.value))
+        elif abs(self.tempo[0].pulse) > _EPSILON:
+            raise InvalidValueError("El mapa de tempo empieza en el pulso 0.")
+        if not self.events:
+            object.__setattr__(self, "events", _events_from_sections(self))
 
     @property
     def total_beats(self) -> float:
@@ -251,6 +505,21 @@ class SongGuide:
                 {"start": _time(note.start), "beats": _time(note.beats), "midi": note.midi}
                 for note in self.melody
             ],
+            "tempo": [
+                {"pulse": _time(point.pulse), "us_per_quarter": point.us_per_quarter}
+                for point in self.tempo
+            ],
+            "events": [
+                {
+                    "pulse": _time(event.pulse),
+                    "span": _time(event.span),
+                    "direction": event.direction,
+                    "contact": event.contact,
+                    "velocity": _time(event.velocity),
+                    "origin": event.origin,
+                }
+                for event in self.events
+            ],
         }
 
     @classmethod
@@ -258,10 +527,12 @@ class SongGuide:
         """Valida un documento que llega del cliente o de la base. Rechaza la letra."""
         if "lyrics" in raw:
             raise InvalidValueError("La guía no guarda la letra de la canción.")
-        if raw.get("version", GUIDE_VERSION) != GUIDE_VERSION:
+        if raw.get("version", 1) not in (1, 2):
             raise InvalidValueError("Versión de guía no soportada.")
         beats_per_bar = _number(raw.get("beats_per_bar", 4), "El compás")
         key = _text(raw.get("song_key"), "La tonalidad", required=False)
+        tempo_raw = raw.get("tempo", [])
+        events_raw = raw.get("events", [])
         return cls(
             title=_text(raw.get("title"), "el título"),
             artist=_text(raw.get("artist"), "el artista"),
@@ -294,7 +565,40 @@ class SongGuide:
                 )
                 for item in _items(raw.get("melody", []), "La melodía", MAX_NOTES)
             ),
+            tempo=tuple(
+                TempoPoint(
+                    pulse=_number(item.get("pulse"), "El pulso del tempo"),
+                    us_per_quarter=int(_number(item.get("us_per_quarter"), "El tempo del tramo")),
+                )
+                for item in _items(tempo_raw, "El tempo", MAX_TEMPO)
+            )
+            if tempo_raw
+            else (),
+            events=tuple(
+                StrumEvent(
+                    pulse=_number(item.get("pulse"), "El pulso del golpe"),
+                    span=_number(item.get("span"), "El hueco del golpe"),
+                    direction=str(item.get("direction", "")),
+                    contact=str(item.get("contact", "")),
+                    velocity=_number(item.get("velocity", 0.82), "La dinámica"),
+                    origin=str(item.get("origin", "")),
+                )
+                for item in _items(events_raw, "Los golpes", MAX_EVENTS)
+            )
+            if events_raw
+            else (),
         )
+
+
+def _events_from_sections(guide: SongGuide) -> tuple[StrumEvent, ...]:
+    """Lista a partir del rasgueo ya guardado. El patrón plano queda marcado como supuesto."""
+    events: list[StrumEvent] = []
+    for section in guide.sections:
+        origin = "inferido" if _is_basic(section.strum, guide.beats_per_bar) else "escrito"
+        events.extend(
+            expand_pattern(section.start, section.beats, guide.beats_per_bar, section.strum, origin)
+        )
+    return tuple(events)
 
 
 @dataclass(frozen=True, slots=True)

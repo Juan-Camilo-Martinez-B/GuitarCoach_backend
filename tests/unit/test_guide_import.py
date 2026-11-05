@@ -101,6 +101,34 @@ def test_lee_acordes_en_espanol_y_el_rasgueo_en_casilleros() -> None:
     assert strum.beats == (1.0, 0.5, 1.0, 0.5, 0.5, 0.5)
 
 
+def test_sin_rasgueo_cada_seccion_cuenta_un_golpe_por_tiempo() -> None:
+    guide = guide_from_text(
+        "{comment: Tempo 102}\n[Intro]\nAm\n[Verse]\nG\n[Chorus]\nC\n",
+        "x",
+    )
+    assert guide.bpm.value == 102
+    by_name = {section.name: section.strum for section in guide.sections}
+    assert by_name["Intro"].beats == (1.0, 1.0, 0.5, 0.5, 1.0)
+    assert by_name["Verse"].beats == by_name["Chorus"].beats == by_name["Intro"].beats
+    assert {event.origin for event in guide.events} == {"leccion"}
+    assert [(chord.chord.symbol, chord.beats) for chord in guide.chords] == [
+        ("Am", 4.0),
+        ("G", 4.0),
+        ("C", 4.0),
+    ]
+    assert [note.midi for note in guide.melody][:2] == [69, 72]
+
+
+def test_el_casillero_vacio_es_aire_y_no_se_inventa_el_fraseo() -> None:
+    guide = guide_from_text("Am G C", "x", strum="D-DU-UDU")
+    contacts = [event.contact for event in guide.events if event.pulse < 4]
+    assert contacts == ["golpe", "aire", "golpe", "golpe", "aire", "golpe", "golpe", "golpe"]
+    assert {event.origin for event in guide.events} == {"escrito"}
+    plain = guide_from_text("[Verse]\nAm G C\n[Chorus]\nC", "x")
+    assert {event.origin for event in plain.events} == {"leccion"}
+    assert [event.span for event in plain.events if event.pulse < 4] == [1.0, 1.0, 0.5, 0.5, 1.0]
+
+
 def test_rechaza_un_texto_sin_acordes() -> None:
     with pytest.raises(InvalidValueError):
         guide_from_text("Solo letra, nada de acordes por aquí.", "x")
@@ -114,6 +142,10 @@ def test_el_musicxml_respeta_duraciones_ligaduras_y_silencios() -> None:
     assert [(note.start, note.beats, note.midi) for note in guide.melody] == [
         (0.0, 2.0, 69),
         (3.0, 3.0, 66),
+    ]
+    assert [(event.pulse, event.span, event.origin) for event in guide.events] == [
+        (0.0, 2.0, "escrito"),
+        (2.0, 4.0, "escrito"),
     ]
 
 
@@ -206,3 +238,25 @@ def test_el_audio_alineado_no_se_mueve() -> None:
     chords = [(0.0, 4.0, "G"), (4.0, 4.0, "D")]
     guide = guide_from_timeline("Toma", "Ana", 100, chords)
     assert [chord.start for chord in guide.chords] == [0.0, 4.0]
+    assert {event.origin for event in guide.events} == {"leccion"}
+    assert guide.melody
+
+
+def test_una_guia_vieja_se_materializa_al_leerla() -> None:
+    raw = guide_from_text("G", "x").as_dict()
+    raw["version"] = 1
+    raw.pop("events")
+    raw.pop("tempo")
+    again = SongGuide.from_dict(raw)
+    assert again.tempo[0].pulse == 0.0
+    assert again.events
+    assert again.events[0].origin == "escrito"
+
+
+def test_el_mapa_de_tempo_parte_cuando_el_pulso_cambia() -> None:
+    from app.infrastructure.audio.analysis import cluster_onsets, tempo_points_from_beats
+
+    points = tempo_points_from_beats([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0])
+    assert points[0] == (0.0, 500_000)
+    assert points[1] == (4.0, 1_000_000)
+    assert cluster_onsets([0.0, 0.01, 0.02, 0.2]) == [0.0, 0.2]

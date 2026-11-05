@@ -20,10 +20,10 @@ class Settings(BaseSettings):
     use_database: bool = False
     jwt_secret: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
-    jwt_ttl_minutes: int = 30
+    jwt_ttl_minutes: int = 720
     cors_origins: list[str] = ["http://localhost:5173"]
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
     daily_report_limit: int = 5
     scrape_min_interval_seconds: float = 1.0
     scrape_max_concurrency: int = 2
@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     daily_audio_limit: int = 10
     audio_timeout_seconds: float = 120
     hit_window_ms: int = 150
+    redis_url: str = ""
 
     def ensure_production_secrets(self) -> None:
         """Impide arrancar en producción con el secreto de desarrollo."""

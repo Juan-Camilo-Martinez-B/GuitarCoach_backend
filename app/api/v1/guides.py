@@ -66,10 +66,24 @@ class NoteDocument(BaseModel):
     midi: int
 
 
-class GuideDocument(BaseModel):
-    """Sin campo de letra: la guía guarda acordes, secciones, rasgueo y melodía."""
+class TempoDocument(BaseModel):
+    pulse: float = Field(ge=0)
+    us_per_quarter: int = Field(ge=200_000, le=3_000_000)
 
-    version: int = 1
+
+class EventDocument(BaseModel):
+    pulse: float = Field(ge=0)
+    span: float = Field(gt=0, le=64)
+    direction: Literal["abajo", "arriba", "apagado"]
+    contact: Literal["golpe", "chuck", "aire"]
+    velocity: float = Field(ge=0, le=1)
+    origin: Literal["escrito", "inferido", "editado", "leccion"]
+
+
+class GuideDocument(BaseModel):
+    """Sin campo de letra: la guía guarda acordes, secciones, rasgueo y la lista de golpes."""
+
+    version: int = 2
     title: str = Field(min_length=1, max_length=120)
     artist: str = Field(min_length=1, max_length=120)
     song_key: str | None = Field(default=None, max_length=12)
@@ -79,6 +93,8 @@ class GuideDocument(BaseModel):
     sections: list[SectionDocument] = Field(min_length=1, max_length=40)
     chords: list[ChordDocument] = Field(min_length=1, max_length=2000)
     melody: list[NoteDocument] = Field(default_factory=list, max_length=4000)
+    tempo: list[TempoDocument] = Field(default_factory=list, max_length=64)
+    events: list[EventDocument] = Field(default_factory=list, max_length=8000)
 
 
 class UpdateBody(BaseModel):
@@ -206,6 +222,8 @@ async def guide_from_audio(
         analysis.bpm,
         [(chord.start, chord.beats, chord.symbol) for chord in analysis.chords],
         [(note.start, note.beats, note.midi) for note in analysis.melody],
+        tempo=list(analysis.tempo),
+        onsets=list(analysis.onsets),
     )
     record, created = await _service(request).create(owner_id, guide, "audio")
     if not created:

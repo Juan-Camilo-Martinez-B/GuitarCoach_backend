@@ -11,7 +11,7 @@ from app.domain.curriculum import LESSONS, lesson_by_id, previous_id, review_les
 from app.domain.entities.report import ReportContent
 from app.domain.errors import ConflictError, NotFoundError
 from app.domain.services.training_coach import MODES, coach_prompt, local_brief
-from app.infrastructure.ai.gemini_tutor import GeminiTutor
+from app.infrastructure.ai.groq_tutor import GroqTutor
 
 router = APIRouter(tags=["lessons"])
 
@@ -152,9 +152,9 @@ async def coach(
     tutor = request.app.state.tutor
     model = "analisis-local"
     content = brief
-    if isinstance(tutor, GeminiTutor) and settings.gemini_api_key:
+    if isinstance(tutor, GroqTutor) and settings.groq_api_key.strip():
         content = await tutor.advise(coach_prompt(body.mode, done, brief))
-        model = settings.gemini_model
+        model = settings.groq_model
     return _view(content, model)
 
 

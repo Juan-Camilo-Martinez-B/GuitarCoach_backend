@@ -1,4 +1,4 @@
-"""Arma el análisis a partir del módulo alcanzado. Gemini puede reescribirlo después."""
+"""Arma el análisis a partir del módulo alcanzado. Groq puede reescribirlo después."""
 
 import json
 

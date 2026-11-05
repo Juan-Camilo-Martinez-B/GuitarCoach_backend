@@ -12,7 +12,7 @@ from app.application.use_cases.create_report import CreateReport
 from app.core.config import Settings
 from app.domain.entities.report import Report
 from app.domain.errors import NotFoundError
-from app.infrastructure.ai.gemini_tutor import GeminiTutor
+from app.infrastructure.ai.groq_tutor import GroqTutor
 
 router = APIRouter(tags=["reports"])
 
@@ -49,7 +49,7 @@ async def create_report(
     uow = current_uow(request)
     user_id = _bearer_user_id(authorization, settings)
     tutor = request.app.state.tutor
-    if not isinstance(tutor, GeminiTutor) and not hasattr(tutor, "advise"):
+    if not isinstance(tutor, GroqTutor) and not hasattr(tutor, "advise"):
         raise RuntimeError("El tutor no está configurado.")
     report = await CreateReport(uow, tutor, SystemClock(), settings.daily_report_limit).execute(
         user_id,

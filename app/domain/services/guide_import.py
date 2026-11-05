@@ -17,7 +17,13 @@ from app.domain.entities.guide import (
     GuideNote,
     GuideSection,
     SongGuide,
+    StrumEvent,
     StrumPattern,
+    TempoPoint,
+    events_from_chords,
+    expand_pattern,
+    expand_slots,
+    lesson_melody,
 )
 from app.domain.errors import InvalidValueError
 from app.domain.value_objects.bpm import Bpm
@@ -176,17 +182,36 @@ class _Timeline:
             raise InvalidValueError("El texto no tiene acordes reconocibles.")
         total = max(self.cursor, self.melody_cursor)
         sections: list[GuideSection] = []
+        events: list[StrumEvent] = []
         for index, section in enumerate(self.sections):
             end = self.sections[index + 1].start if index + 1 < len(self.sections) else total
             if end - section.start <= 0:
                 continue
             strum_text = section.strum or meta.strum
-            strum = (
-                StrumPattern.from_text(strum_text, self.beats_per_bar)
-                if strum_text
-                else StrumPattern.basic(self.beats_per_bar)
-            )
-            sections.append(GuideSection(section.name, section.start, end - section.start, strum))
+            if strum_text:
+                pattern = StrumPattern.from_text(strum_text, self.beats_per_bar)
+                events.extend(
+                    expand_slots(
+                        strum_text,
+                        section.start,
+                        end - section.start,
+                        self.beats_per_bar,
+                        "escrito",
+                    )
+                )
+            else:
+                pattern = StrumPattern.lesson(self.beats_per_bar)
+                events.extend(
+                    expand_pattern(
+                        section.start,
+                        end - section.start,
+                        self.beats_per_bar,
+                        pattern,
+                        "leccion",
+                    )
+                )
+            sections.append(GuideSection(section.name, section.start, end - section.start, pattern))
+        melody = tuple(self.melody) or lesson_melody(tuple(self.chords))
         return SongGuide(
             title=(meta.title or fallback_title).strip() or "Canción",
             artist=(meta.artist or "Sin artista").strip() or "Sin artista",
@@ -196,7 +221,8 @@ class _Timeline:
             capo=meta.capo,
             sections=tuple(sections),
             chords=tuple(self.chords),
-            melody=tuple(self.melody),
+            melody=melody,
+            events=tuple(events),
         )
 
 
@@ -275,6 +301,10 @@ def _read_meta(lines: list[str], meta: _Meta) -> None:
             meta.capo = _capo(value)
         elif key in {"strum", "rasgueo"} and meta.strum is None:
             meta.strum = value
+        elif key in {"comment", "c", "ci", "comment_italic"} and meta.bpm is None:
+            hinted = _tempo_hint(value)
+            if hinted is not None:
+                meta.bpm = hinted
 
 
 def _read_body(lines: list[str], timeline: _Timeline) -> None:
@@ -410,6 +440,16 @@ def _section_name(raw: str) -> str:
     return name[:1].upper() + name[1:] if name else DEFAULT_SECTION
 
 
+def _tempo_hint(text: str) -> int | None:
+    match = re.search(r"(?i)\b(?:tempo|bpm)\b\D{0,6}(\d{2,3})\b|\b(\d{2,3})\s*bpm\b", text)
+    if match is None:
+        return None
+    value = int(match.group(1) or match.group(2))
+    if 40 <= value <= 240:
+        return value
+    return None
+
+
 def _bpm(value: str) -> int:
     digits = re.search(r"\d+(?:\.\d+)?", value)
     if digits is None:
@@ -538,7 +578,8 @@ def guide_from_musicxml(text: str, fallback_title: str) -> SongGuide:
         capo=0,
         sections=_xml_sections(marks, total, beats_per_bar),
         chords=chords,
-        melody=tuple(notes),
+        melody=tuple(notes) or lesson_melody(chords),
+        events=events_from_chords(chords, "escrito"),
     )
 
 
@@ -571,13 +612,15 @@ def _bar_roots(notes: list[GuideNote], beats_per_bar: float) -> list[tuple[float
 def _xml_sections(
     marks: list[tuple[float, str]], total: float, beats_per_bar: float
 ) -> tuple[GuideSection, ...]:
-    strum = StrumPattern.basic(beats_per_bar)
     starts = [(0.0, DEFAULT_SECTION)] + [mark for mark in marks if mark[0] > 0]
     sections = []
     for index, (start, name) in enumerate(starts[:MAX_SECTIONS]):
         end = starts[index + 1][0] if index + 1 < len(starts) else total
         if end > start:
-            sections.append(GuideSection(_section_name(name), start, end - start, strum))
+            titled = _section_name(name)
+            sections.append(
+                GuideSection(titled, start, end - start, StrumPattern.basic(beats_per_bar))
+            )
     return tuple(sections)
 
 
@@ -682,8 +725,13 @@ def guide_from_timeline(
     chords: list[tuple[float, float, str]],
     melody: list[tuple[float, float, int]] | None = None,
     beats_per_bar: float = 4,
+    tempo: list[tuple[float, int]] | None = None,
+    onsets: list[tuple[float, float]] | None = None,
 ) -> SongGuide:
-    """Arma la guía de un análisis de audio: partes de ocho compases para practicar en bucle."""
+    """Arma la guía de un análisis de audio: partes de ocho compases para practicar en bucle.
+
+    Los onset y el mapa de tempo llegan marcados como supuesto. El alumno los confirma.
+    """
     if not chords:
         raise InvalidValueError("No hay acordes para armar la guía.")
     chords, melody = align_downbeat(chords, melody or [], beats_per_bar)
@@ -698,25 +746,47 @@ def guide_from_timeline(
     part = BARS_PER_PART * beats_per_bar
     count = min(MAX_SECTIONS, max(1, -(-int(total) // int(part))))
     part = max(part, total / count)
-    strum = StrumPattern.basic(beats_per_bar)
-    sections = tuple(
-        GuideSection(
-            f"Parte {index + 1}",
-            index * part,
-            min(part, total - index * part),
-            strum,
+    sections = []
+    for index in range(count):
+        remaining = total - index * part
+        if remaining <= 0:
+            continue
+        name = f"Parte {index + 1}"
+        sections.append(
+            GuideSection(
+                name,
+                index * part,
+                min(part, remaining),
+                StrumPattern.lesson(beats_per_bar),
+            )
         )
-        for index in range(count)
-        if total - index * part > 0
+    sections = tuple(sections)
+    opening = min(300, max(20, bpm))
+    points = tuple(
+        TempoPoint(pulse, us) for pulse, us in (tempo or [(0.0, round(60_000_000 / opening))])
     )
+    if onsets:
+        attacks = tuple(
+            StrumEvent(pulse, span, "abajo", "golpe", 0.8, "inferido") for pulse, span in onsets
+        )
+    else:
+        attacks = tuple(
+            event
+            for section in sections
+            for event in expand_pattern(
+                section.start, section.beats, beats_per_bar, section.strum, "leccion"
+            )
+        )
     return SongGuide(
         title=title.strip() or "Canción",
         artist=artist.strip() or "Sin artista",
         song_key=None,
-        bpm=Bpm(min(300, max(20, bpm))),
+        bpm=Bpm(opening),
         beats_per_bar=beats_per_bar,
         capo=0,
         sections=sections,
         chords=guide_chords,
-        melody=notes,
+        melody=notes or lesson_melody(guide_chords),
+        tempo=points,
+        events=attacks,
     )

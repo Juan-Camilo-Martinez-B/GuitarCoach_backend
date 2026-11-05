@@ -1,4 +1,4 @@
-"""El informe usa un doble del modelo y no llama a Gemini."""
+"""El informe usa un doble del modelo y no llama a Groq."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -13,7 +13,7 @@ from app.domain.errors import ExternalServiceError, RateLimitExceededError
 from app.domain.value_objects.bpm import Bpm
 from app.domain.value_objects.chord import Chord
 from app.domain.value_objects.hit_result import HitKind, HitResult
-from app.infrastructure.ai.gemini_tutor import GeminiTutor
+from app.infrastructure.ai.groq_tutor import GroqTutor
 from app.infrastructure.ai.tutor import PromptBuilder, ReportDraft
 from app.infrastructure.db.memory import InMemoryUnitOfWork
 
@@ -78,13 +78,19 @@ async def test_el_limite_diario_bloquea_un_informe_nuevo() -> None:
         await use_case.execute(user_id, attempt_id, "beginner")
 
 
-async def test_gemini_rechaza_una_respuesta_que_no_es_json() -> None:
-    tutor = GeminiTutor("clave-de-prueba", "gemini-2.0-flash")
+async def test_groq_sin_clave_no_llama_a_la_red() -> None:
+    tutor = GroqTutor("  ", "llama-3.3-70b-versatile")
+    with pytest.raises(ExternalServiceError, match="GROQ_API_KEY"):
+        await tutor.advise("METRICAS")
 
-    def _invalid(_prompt: str) -> str:
+
+async def test_groq_rechaza_una_respuesta_que_no_es_json() -> None:
+    tutor = GroqTutor("clave-de-prueba", "llama-3.3-70b-versatile")
+
+    async def _invalid(_prompt: str) -> str:
         return "esto no es json"
 
-    tutor._generate = _invalid  # type: ignore[method-assign]
+    tutor._complete = _invalid  # type: ignore[method-assign]
     with pytest.raises(ExternalServiceError):
         await tutor.advise("METRICAS")
 
