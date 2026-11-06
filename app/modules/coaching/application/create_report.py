@@ -40,7 +40,8 @@ class CreateReport:
             raise NotFoundError("La canción del intento no existe.")
         metrics_hash = _hash_attempt(attempt.accuracy, attempt.avg_delta_ms, attempt.song_id)
         cached = await self._uow.reports.find_by_metrics_hash(metrics_hash)
-        if cached is None:
+        # Un análisis local no se reutiliza: el siguiente informe vuelve a intentar con la IA.
+        if cached is None or cached.model == LOCAL_MODEL:
             used = await self._uow.reports.count_for_user_on_day(user_id, self._clock.now().date())
             if used >= self._daily_limit:
                 raise RateLimitExceededError("Llegaste al límite diario de informes.")

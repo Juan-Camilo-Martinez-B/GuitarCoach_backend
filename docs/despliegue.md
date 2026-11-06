@@ -11,7 +11,7 @@ El audio no sale del navegador. Este servicio solo recibe telemetría, guarda ca
 | `JWT_SECRET` | Secreto largo, distinto del valor de desarrollo. |
 | `CORS_ORIGINS` | Lista JSON de orígenes. No uses `*`. |
 | `GROQ_API_KEY` | Clave del API de Groq. Vacía en local. |
-| `GROQ_MODEL` | Por defecto `llama-3.3-70b-versatile`. |
+| `GROQ_MODEL` | Por defecto `openai/gpt-oss-120b`. Si Groq retira el modelo, la API responde con el análisis local: comprueba `model` en la respuesta. |
 | `DAILY_REPORT_LIMIT` | Informes nuevos por usuario y día. La caché por hash no vuelve a llamar al modelo. |
 | `AUTH_REQUESTS_PER_MINUTE` | Tope de `POST /auth/*` por cliente. |
 | `REDIS_URL` | Vacío deja el aviso en el proceso. `redis://localhost:6379/0` publica el fin del trabajo y `/ws/jobs/{id}` lo entrega. |

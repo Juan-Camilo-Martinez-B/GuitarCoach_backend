@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     jwt_ttl_minutes: int = 720
     cors_origins: list[str] = ["http://localhost:5173"]
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     daily_report_limit: int = 5
     scrape_min_interval_seconds: float = 1.0
     scrape_max_concurrency: int = 2

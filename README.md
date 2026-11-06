@@ -96,7 +96,7 @@ La fecha la manda el navegador porque la racha sigue el día local del alumno; s
 
 ## Informe sin tutor externo
 
-Si Groq no está configurado o falla, `POST /attempts/{id}/report` y `POST /me/coach` responden con un análisis local calculado con los datos reales (`model: "analisis-local"`). El informe de un intento solo lo puede leer su dueño.
+Si Groq no está configurado o falla, `POST /attempts/{id}/report` y `POST /me/coach` responden con un análisis local calculado con los datos reales (`model: "analisis-local"`). La pantalla del informe avisa cuando pasa, y ese análisis no se reutiliza para otro intento: el siguiente vuelve a intentar con Groq. El informe de un intento solo lo puede leer su dueño.
 
 La ventana de acierto de un intento es de 150 ms, pero nunca más de medio tiempo: a 300 BPM son 100 ms.
 
