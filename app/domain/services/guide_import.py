@@ -23,7 +23,6 @@ from app.domain.entities.guide import (
     events_from_chords,
     expand_pattern,
     expand_slots,
-    lesson_melody,
 )
 from app.domain.errors import InvalidValueError
 from app.domain.value_objects.bpm import Bpm
@@ -211,7 +210,8 @@ class _Timeline:
                     )
                 )
             sections.append(GuideSection(section.name, section.start, end - section.start, pattern))
-        melody = tuple(self.melody) or lesson_melody(tuple(self.chords))
+        # Sin notas escritas la guía queda sin melodía: inventarla enseñaría otra canción.
+        melody = tuple(self.melody)
         return SongGuide(
             title=(meta.title or fallback_title).strip() or "Canción",
             artist=(meta.artist or "Sin artista").strip() or "Sin artista",
@@ -504,9 +504,7 @@ def guide_from_musicxml(text: str, fallback_title: str) -> SongGuide:
         raise InvalidValueError("El MusicXML no se pudo leer.") from error
     title = _first_text(root, "work-title") or _first_text(root, "movement-title") or fallback_title
     artist = _first_text(root, "creator") or "MusicXML"
-    part = next((element for element in root if _local(element.tag) == "part"), None)
-    if part is None:
-        raise InvalidValueError("El MusicXML no trae partes.")
+    part = _guitar_part(root)
 
     divisions = 1.0
     beats_per_bar = 4.0
@@ -515,8 +513,10 @@ def guide_from_musicxml(text: str, fallback_title: str) -> SongGuide:
     harmonies: list[tuple[float, Chord]] = []
     notes: list[GuideNote] = []
     marks: list[tuple[float, str]] = []
+    pitch = _SoundingPitch()
 
-    for measure in (element for element in part if _local(element.tag) == "measure"):
+    measures = [element for element in part if _local(element.tag) == "measure"]
+    for measure in (measures[index] for index in _playback_order(measures)):
         position = 0.0
         longest = 0.0
         for element in measure:
@@ -527,6 +527,7 @@ def guide_from_musicxml(text: str, fallback_title: str) -> SongGuide:
                 unit = _child_text(element, "beat-type")
                 if beats and unit:
                     beats_per_bar = parse_time_signature(f"{beats}/{unit}")
+                pitch.read_attributes(element)
             elif tag == "direction":
                 bpm = bpm or _tempo(element)
                 rehearsal = _child_text(element, "rehearsal")
@@ -542,7 +543,7 @@ def guide_from_musicxml(text: str, fallback_title: str) -> SongGuide:
                 if _has_child(element, "grace"):
                     continue
                 if not is_chord_tone:
-                    midi = _midi(element)
+                    midi = pitch.sounding(element)
                     voice = _child_text(element, "voice") or "1"
                     if midi is not None and voice == "1" and length > 0:
                         _add_note(notes, measure_start + position, length, midi, _tie_stop(element))
@@ -578,7 +579,7 @@ def guide_from_musicxml(text: str, fallback_title: str) -> SongGuide:
         capo=0,
         sections=_xml_sections(marks, total, beats_per_bar),
         chords=chords,
-        melody=tuple(notes) or lesson_melody(chords),
+        melody=tuple(notes),
         events=events_from_chords(chords, "escrito"),
     )
 
@@ -643,6 +644,159 @@ def _midi(element: ET.Element) -> int | None:
         return None
     alter = round(float(_child_text(element, "alter") or 0))
     return 12 * (int(octave) + 1) + _PITCH[step.upper()] + alter
+
+
+_GUITAR_WORDS = ("guit", "guitar", "guitarra")
+# Tope de compases al desplegar repeticiones: un archivo mal formado no crece sin fin.
+MAX_PLAYED_MEASURES = 2000
+
+
+def _guitar_part(root: ET.Element) -> ET.Element:
+    """La parte de guitarra: la que trae tablatura o se llama guitarra. Si no hay, la primera."""
+    parts = [element for element in root if _local(element.tag) == "part"]
+    if not parts:
+        raise InvalidValueError("El MusicXML no trae partes.")
+    names: dict[str, str] = {}
+    for element in root.iter():
+        if _local(element.tag) == "score-part":
+            label = " ".join(
+                (child.text or "")
+                for child in element.iter()
+                if _local(child.tag) in {"part-name", "instrument-name"}
+            )
+            names[element.get("id", "")] = label.lower()
+
+    def has_tab(part: ET.Element) -> bool:
+        return any(_local(child.tag) == "staff-tuning" for child in part.iter())
+
+    def named_guitar(part: ET.Element) -> bool:
+        return any(word in names.get(part.get("id", ""), "") for word in _GUITAR_WORDS)
+
+    # Un Element sin hijos es falso al evaluarlo: se compara con None, no con "or".
+    for matches in (has_tab, named_guitar):
+        found = next((part for part in parts if matches(part)), None)
+        if found is not None:
+            return found
+    return parts[0]
+
+
+@dataclass(slots=True)
+class _SoundingPitch:
+    """La altura que suena. La tablatura manda; si no hay, lo escrito más la transposición.
+
+    La guitarra se escribe una octava por encima de como suena: los archivos lo declaran
+    con <transpose><octave-change>-1</octave-change></transpose>.
+    """
+
+    shift: int = 0
+    capo: int = 0
+    # Cuerda (1 es la más aguda, como en <string>) -> MIDI al aire.
+    tuning: dict[int, int] = field(default_factory=dict)
+
+    def read_attributes(self, attributes: ET.Element) -> None:
+        for child in attributes.iter():
+            tag = _local(child.tag)
+            if tag == "transpose":
+                chromatic = round(float(_child_text(child, "chromatic") or 0))
+                octaves = int(_child_text(child, "octave-change") or 0)
+                self.shift = chromatic + 12 * octaves
+            elif tag == "staff-details":
+                self._read_tab(child)
+
+    def _read_tab(self, details: ET.Element) -> None:
+        tunings = [child for child in details if _local(child.tag) == "staff-tuning"]
+        lines = _child_text(details, "staff-lines")
+        count = int(lines) if lines and lines.isdigit() else len(tunings)
+        tuning: dict[int, int] = {}
+        for item in tunings:
+            line = int(item.get("line", "0"))
+            step = _child_text(item, "tuning-step")
+            octave = _child_text(item, "tuning-octave")
+            if not step or octave is None or not 1 <= line <= count:
+                continue
+            alter = round(float(_child_text(item, "tuning-alter") or 0))
+            # La línea 1 de la tablatura es la cuerda más grave.
+            tuning[count + 1 - line] = 12 * (int(octave) + 1) + _PITCH[step.upper()] + alter
+        if tuning:
+            self.tuning = tuning
+        capo = _child_text(details, "capo")
+        if capo and capo.isdigit():
+            self.capo = int(capo)
+
+    def sounding(self, note: ET.Element) -> int | None:
+        if _has_child(note, "rest"):
+            return None
+        string = _child_text(note, "string")
+        fret = _child_text(note, "fret")
+        if string and fret and string.isdigit() and fret.isdigit():
+            open_string = self.tuning.get(int(string))
+            if open_string is not None:
+                return open_string + int(fret) + self.capo
+        written = _midi(note)
+        return None if written is None else written + self.shift
+
+
+def _barline_marks(measure: ET.Element) -> tuple[int | None, bool, set[int] | None, bool]:
+    """Repetición atrás (veces), repetición adelante, casilla que abre y casilla que cierra."""
+    backward: int | None = None
+    forward = False
+    opens: set[int] | None = None
+    closes = False
+    for barline in (child for child in measure if _local(child.tag) == "barline"):
+        for child in barline:
+            tag = _local(child.tag)
+            if tag == "repeat" and child.get("direction") == "backward":
+                times = child.get("times", "2")
+                backward = int(times) if times.isdigit() else 2
+            elif tag == "repeat" and child.get("direction") == "forward":
+                forward = True
+            elif tag == "ending" and child.get("type") == "start":
+                opens = {int(number) for number in re.findall(r"\d+", child.get("number", ""))}
+            elif tag == "ending" and child.get("type") in {"stop", "discontinue"}:
+                closes = True
+    return backward, forward, opens, closes
+
+
+def _playback_order(measures: list[ET.Element]) -> list[int]:
+    """Índices de compás en el orden en que suenan, con repeticiones y casillas 1.ª y 2.ª."""
+    marks = [_barline_marks(measure) for measure in measures]
+    endings: list[set[int] | None] = []
+    current: set[int] | None = None
+    for _, _, opens, closes in marks:
+        if opens is not None:
+            current = opens
+        endings.append(current)
+        if closes:
+            current = None
+
+    order: list[int] = []
+    index = 0
+    start = 0
+    passes = 1
+    jumped_from = -1
+    while index < len(measures) and len(order) < MAX_PLAYED_MEASURES:
+        backward, forward, _, _ = marks[index]
+        allowed = endings[index]
+        if passes > 1 and index > jumped_from and allowed is None:
+            # Ya se salió de las casillas: lo que sigue es una sola pasada.
+            passes = 1
+            start = index
+        if forward and passes == 1:
+            start = index
+        if allowed and passes not in allowed:
+            index += 1
+            continue
+        order.append(index)
+        if backward is not None and passes < backward:
+            passes += 1
+            jumped_from = index
+            index = start
+            continue
+        if backward is not None and allowed is None:
+            passes = 1
+            start = index + 1
+        index += 1
+    return order
 
 
 def _tie_stop(element: ET.Element) -> bool:
@@ -746,13 +900,13 @@ def guide_from_timeline(
     part = BARS_PER_PART * beats_per_bar
     count = min(MAX_SECTIONS, max(1, -(-int(total) // int(part))))
     part = max(part, total / count)
-    sections = []
+    parts: list[GuideSection] = []
     for index in range(count):
         remaining = total - index * part
         if remaining <= 0:
             continue
         name = f"Parte {index + 1}"
-        sections.append(
+        parts.append(
             GuideSection(
                 name,
                 index * part,
@@ -760,7 +914,7 @@ def guide_from_timeline(
                 StrumPattern.lesson(beats_per_bar),
             )
         )
-    sections = tuple(sections)
+    sections = tuple(parts)
     opening = min(300, max(20, bpm))
     points = tuple(
         TempoPoint(pulse, us) for pulse, us in (tempo or [(0.0, round(60_000_000 / opening))])
@@ -786,7 +940,7 @@ def guide_from_timeline(
         capo=0,
         sections=sections,
         chords=guide_chords,
-        melody=notes or lesson_melody(guide_chords),
+        melody=notes,
         tempo=points,
         events=attacks,
     )

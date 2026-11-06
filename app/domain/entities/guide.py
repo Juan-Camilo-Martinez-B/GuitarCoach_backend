@@ -274,49 +274,6 @@ def expand_slots(
     return tuple(events)
 
 
-def lesson_melody(chords: tuple[GuideChord, ...]) -> tuple[GuideNote, ...]:
-    """Fundamental y tercera de cada acorde, en un registro que se puede cantar."""
-    pitches = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
-    notes: list[GuideNote] = []
-    previous = 67
-    for chord in chords:
-        step = pitches[chord.chord.root]
-        if chord.chord.accidental == "#":
-            step += 1
-        elif chord.chord.accidental == "b":
-            step -= 1
-        midi = 60 + step
-        while midi < previous - 5:
-            midi += 12
-        while midi > previous + 6:
-            midi -= 12
-        midi = min(81, max(60, midi))
-        quality = chord.chord.quality
-        if quality.startswith("m") and not quality.startswith("maj"):
-            color = 3
-        elif "sus2" in quality:
-            color = 2
-        elif "sus" in quality:
-            color = 5
-        elif quality.startswith("dim"):
-            color = 3
-        else:
-            color = 4
-        if chord.beats >= 2:
-            half = chord.beats / 2
-            notes.append(GuideNote(_time(chord.start), _time(half), midi))
-            notes.append(
-                GuideNote(_time(chord.start + half), _time(chord.beats - half), midi + color)
-            )
-            previous = midi + color
-        else:
-            notes.append(GuideNote(_time(chord.start), _time(chord.beats), midi))
-            previous = midi
-        if len(notes) >= MAX_NOTES:
-            break
-    return tuple(notes)
-
-
 def events_from_chords(chords: tuple[GuideChord, ...], origin: str) -> tuple[StrumEvent, ...]:
     """Un golpe al inicio de cada acorde, con la duración que el archivo escribió."""
     return tuple(
