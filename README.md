@@ -31,9 +31,78 @@ flowchart LR
   api -->|texto del informe| tutor
 ```
 
+## Arquitectura: monolito modular
+
+Un solo proceso y una sola base de datos, con el código dividido por capacidades de negocio. Cada módulo se puede entender y cambiar sin leer los demás, y extraer uno más adelante no exige reescribirlo.
+
+```text
+app/
+  main.py          Composición: arma la aplicación y registra los módulos.
+  bootstrap/       Une los repositorios de todos los módulos en una transacción por petición.
+  shared/          Lo que no es de nadie: configuración, errores, reloj, HTTP, sesión SQL, valores musicales.
+  modules/
+    identity/      Cuentas, contraseñas y JWT.
+    catalog/       Canciones, plan de estudio, importación y su aviso por WebSocket y Redis.
+    guides/        Guías de canciones y tablaturas de Guitar Pro.
+    practice/      Intentos, evaluación y progreso.
+    coaching/      Informe del tutor y análisis según el curso.
+    learning/      Temario, avance y repaso.
+    journey/       Ruta del principiante, racha y logros.
+```
+
+Cada módulo sigue las mismas capas:
+
+| Capa | Qué contiene | Puede depender de |
+| --- | --- | --- |
+| `domain/` | Entidades y reglas puras | `shared`, interfaces públicas de otros módulos |
+| `application/` | Casos de uso | `domain`, `ports` |
+| `ports.py` | Lo que el módulo necesita del exterior, y su almacén (`CatalogStore`, `PracticeStore`…) | `domain` |
+| `infrastructure/` | SQLAlchemy, memoria, Groq, Redis, scraping | todo lo anterior |
+| `api` | Rutas de FastAPI | todo lo anterior |
+| `public.py` | Lo único que ven los demás módulos | `domain`, `ports`, `application` |
+
+Las fronteras no dependen de la disciplina: `tests/architecture/test_module_boundaries.py` rompe el CI si un módulo importa el interior de otro, si el dominio usa un framework o si la aplicación toca la infraestructura.
+
+```mermaid
+flowchart TD
+  identity
+  catalog
+  guides --> catalog
+  practice --> catalog
+  learning
+  coaching --> practice
+  coaching --> catalog
+  coaching --> learning
+  journey --> practice
+  journey --> guides
+  journey --> learning
+  identity -.->|bearer_user_id| catalog & guides & practice & coaching & learning & journey
+```
+
+Todos los módulos comparten la transacción de la petición. La API, las tablas y los mensajes no cambiaron con esta estructura.
+
+### WebSocket y Redis
+
+`POST /songs/import` responde 202 y deja el trabajo en cola. Al terminar, el trabajo se publica en el canal `guitarcoach:job:{id}` y `/ws/jobs/{id}` lo entrega al navegador. Con `REDIS_URL` el aviso llega a cualquier instancia; sin Redis, o si no responde, se queda en el proceso. Vive en `modules/catalog/infrastructure/realtime/bus.py` y `modules/catalog/api/realtime.py`.
+
+## Ruta, racha y logros
+
+| Endpoint | Qué hace |
+| --- | --- |
+| `GET /me/journey?today=AAAA-MM-DD` | Pasos cumplidos, días de práctica, racha actual, mejor racha y logros. |
+| `POST /me/journey` | Agrega pasos y días (`today`, `milestones`, `days`) y devuelve lo mismo. Repetirlo no cambia nada. |
+
+La fecha la manda el navegador porque la racha sigue el día local del alumno; se limita a un día de diferencia con el servidor. Los logros no se guardan: salen de los datos. Lo que la cuenta ya demuestra cuenta aunque el navegador no avise: un intento guardado cumple "tocar", una guía cumple "subir una canción" y un módulo terminado suma su día.
+
+## Informe sin tutor externo
+
+Si Groq no está configurado o falla, `POST /attempts/{id}/report` y `POST /me/coach` responden con un análisis local calculado con los datos reales (`model: "analisis-local"`). El informe de un intento solo lo puede leer su dueño.
+
+La ventana de acierto de un intento es de 150 ms, pero nunca más de medio tiempo: a 300 BPM son 100 ms.
+
 ## Persistencia
 
-Con `USE_DATABASE=true` la API abre una sesión de PostgreSQL por petición y guarda usuarios, guías, intentos e informes en `DATABASE_URL`. Con `false` todo vive en memoria del proceso y se pierde al cerrarlo; así corren las pruebas unitarias. El esquema lo aplica `guitarcoach-database` (migración `0017_song_guides` para las guías).
+Con `USE_DATABASE=true` la API abre una sesión de PostgreSQL por petición y guarda usuarios, guías, intentos e informes en `DATABASE_URL`. Con `false` todo vive en memoria del proceso y se pierde al cerrarlo; así corren las pruebas unitarias. El esquema lo aplica `guitarcoach-database` (migraciones `0017_song_guides` para las guías y `0019_user_journey` para la ruta).
 
 Las pruebas de integración se omiten sin `DATABASE_URL`. Para correrlas sin tocar la base de trabajo, usa una base aparte:
 
@@ -41,6 +110,8 @@ Las pruebas de integración se omiten sin `DATABASE_URL`. Para correrlas sin toc
 $env:DATABASE_URL = "postgresql+asyncpg://guitarcoach:guitarcoach@localhost:54329/guitarcoach_test"
 .\.venv\Scripts\python.exe -m pytest tests/integration
 ```
+
+Con `TEST_REDIS_URL=redis://localhost:6379/0` también se comprueba el aviso del trabajo contra un Redis real.
 
 ## Guías de canciones
 
