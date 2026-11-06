@@ -4,12 +4,12 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from app.domain.entities.scrape_job import ScrapeJob
-from app.domain.entities.song import ChartChord, Song
-from app.domain.entities.user import User
-from app.domain.errors import InvalidValueError
-from app.domain.value_objects.bpm import Bpm
-from app.domain.value_objects.chord import Chord
+from app.modules.catalog.domain.scrape_job import ScrapeJob
+from app.modules.catalog.domain.song import ChartChord, Song
+from app.modules.identity.domain.user import User
+from app.shared.errors import InvalidValueError
+from app.shared.music.bpm import Bpm
+from app.shared.music.chord import Chord
 
 
 def test_el_usuario_exige_un_metodo_de_acceso() -> None:

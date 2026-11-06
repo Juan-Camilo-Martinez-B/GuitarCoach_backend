@@ -3,8 +3,8 @@
 from uuid import uuid4
 
 import pytest
-from app.domain.entities.guide_tab import MAX_TAB_BYTES, GuideTab, sniff_tab
-from app.domain.errors import InvalidValueError
+from app.modules.guides.domain.guide_tab import MAX_TAB_BYTES, GuideTab, sniff_tab
+from app.shared.errors import InvalidValueError
 
 
 @pytest.mark.parametrize(

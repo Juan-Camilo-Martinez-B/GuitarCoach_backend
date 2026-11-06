@@ -4,7 +4,7 @@ import io
 import json
 import logging
 
-from app.core.logging import configure_logging
+from app.shared.logging import configure_logging
 
 
 def test_el_log_es_json_con_nivel_y_mensaje() -> None:

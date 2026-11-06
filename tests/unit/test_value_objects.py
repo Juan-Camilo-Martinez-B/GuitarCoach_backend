@@ -3,14 +3,14 @@
 import math
 
 import pytest
-from app.domain.constants import A4_HERTZ, CENTS_PER_OCTAVE, SEMITONES_PER_OCTAVE
-from app.domain.errors import InvalidValueError
-from app.domain.value_objects.bpm import Bpm
-from app.domain.value_objects.cents import Cents
-from app.domain.value_objects.chord import Chord
-from app.domain.value_objects.frequency import Frequency
-from app.domain.value_objects.hit_result import HitKind, HitResult
-from app.domain.value_objects.note import Note
+from app.modules.practice.domain.hit_result import HitKind, HitResult
+from app.shared.constants import A4_HERTZ, CENTS_PER_OCTAVE, SEMITONES_PER_OCTAVE
+from app.shared.errors import InvalidValueError
+from app.shared.music.bpm import Bpm
+from app.shared.music.cents import Cents
+from app.shared.music.chord import Chord
+from app.shared.music.frequency import Frequency
+from app.shared.music.note import Note
 
 
 def test_el_la_440_es_la_nota_a4() -> None:

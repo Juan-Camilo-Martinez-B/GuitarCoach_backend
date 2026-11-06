@@ -2,9 +2,9 @@
 
 import json
 
-from app.core.config import Settings
-from app.domain.services.guide_import import guide_from_text
 from app.main import create_app
+from app.modules.guides.domain.guide_import import guide_from_text
+from app.shared.config import Settings
 from fastapi.testclient import TestClient
 
 GP5 = b"\x18FICHIER GUITAR PRO v5.00" + b"\x00" * 64

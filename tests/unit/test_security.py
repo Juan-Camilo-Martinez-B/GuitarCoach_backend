@@ -1,8 +1,8 @@
 """Las respuestas llevan cabeceras de seguridad y un origen CORS concreto."""
 
 import pytest
-from app.core.config import Settings
 from app.main import create_app
+from app.shared.config import Settings
 from fastapi.testclient import TestClient
 
 

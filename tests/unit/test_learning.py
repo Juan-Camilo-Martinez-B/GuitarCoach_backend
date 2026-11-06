@@ -1,8 +1,8 @@
 """El curso se guarda y un archivo ChordPro produce las dos formas de estudio."""
 
-from app.core.config import Settings
-from app.domain.services.chart_import import parse_chart
 from app.main import create_app
+from app.modules.guides.domain.chart_import import parse_chart
+from app.shared.config import Settings
 from fastapi.testclient import TestClient
 
 CHART = """title: Patio

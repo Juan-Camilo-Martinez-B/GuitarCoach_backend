@@ -1,7 +1,7 @@
 """La configuración no acepta el secreto de desarrollo cuando el entorno es producción."""
 
 import pytest
-from app.core.config import DEV_JWT_SECRET, Settings
+from app.shared.config import DEV_JWT_SECRET, Settings
 
 
 def test_produccion_exige_un_secreto_propio() -> None:

@@ -6,13 +6,14 @@ import os
 from uuid import uuid4
 
 import pytest
-from app.application.security import SystemClock
-from app.application.use_cases.guides import GuideService
-from app.domain.entities.user import User
-from app.domain.services.guide_import import guide_from_text
-from app.infrastructure.db.models import SongGuideModel, UserModel
-from app.infrastructure.db.repositories import SqlUnitOfWork
-from app.infrastructure.db.session import create_engine, create_session_factory
+from app.bootstrap.unit_of_work import SqlUnitOfWork
+from app.modules.guides.application.service import GuideService
+from app.modules.guides.domain.guide_import import guide_from_text
+from app.modules.guides.infrastructure.models import SongGuideModel
+from app.modules.identity.domain.user import User
+from app.modules.identity.infrastructure.models import UserModel
+from app.shared.clock import SystemClock
+from app.shared.persistence.session import create_engine, create_session_factory
 from sqlalchemy import delete
 
 pytestmark = pytest.mark.skipif(

@@ -4,18 +4,19 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from app.application.use_cases.create_report import CreateReport
-from app.domain.entities.attempt import Attempt
-from app.domain.entities.report import ReportContent
-from app.domain.entities.song import ChartChord, Song
-from app.domain.entities.user import User
-from app.domain.errors import ExternalServiceError, RateLimitExceededError
-from app.domain.value_objects.bpm import Bpm
-from app.domain.value_objects.chord import Chord
-from app.domain.value_objects.hit_result import HitKind, HitResult
-from app.infrastructure.ai.groq_tutor import GroqTutor
-from app.infrastructure.ai.tutor import PromptBuilder, ReportDraft
-from app.infrastructure.db.memory import InMemoryUnitOfWork
+from app.bootstrap.unit_of_work import InMemoryUnitOfWork
+from app.modules.catalog.domain.song import ChartChord, Song
+from app.modules.coaching.application.create_report import CreateReport
+from app.modules.coaching.application.prompts import PromptBuilder
+from app.modules.coaching.domain.report import ReportContent
+from app.modules.coaching.infrastructure.groq_tutor import GroqTutor
+from app.modules.coaching.infrastructure.tutor import ReportDraft
+from app.modules.identity.domain.user import User
+from app.modules.practice.domain.attempt import Attempt
+from app.modules.practice.domain.hit_result import HitKind, HitResult
+from app.shared.errors import ExternalServiceError, RateLimitExceededError
+from app.shared.music.bpm import Bpm
+from app.shared.music.chord import Chord
 
 
 class FixedClock:

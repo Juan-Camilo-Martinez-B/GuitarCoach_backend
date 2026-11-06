@@ -1,14 +1,14 @@
 """Los lectores conservan compases, duraciones y secciones, y descartan la letra."""
 
 import pytest
-from app.domain.entities.guide import SongGuide, StrumPattern
-from app.domain.errors import InvalidValueError
-from app.domain.services.guide_import import (
+from app.modules.guides.domain.guide import SongGuide, StrumPattern
+from app.modules.guides.domain.guide_import import (
     guide_from_file,
     guide_from_musicxml,
     guide_from_text,
 )
-from app.domain.value_objects.chord import Chord
+from app.shared.errors import InvalidValueError
+from app.shared.music.chord import Chord
 
 PASTED = """Capo 2
 [Intro]

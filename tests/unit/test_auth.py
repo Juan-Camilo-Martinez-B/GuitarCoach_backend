@@ -1,10 +1,11 @@
 """Registro e inicio de sesión, sin base de datos."""
 
-from app.application.security import ArgonPasswordHasher, JwtTokenIssuer, SystemClock
-from app.application.use_cases.auth import LoginUser, RegisterUser
-from app.core.config import Settings
-from app.infrastructure.db.memory import InMemoryUnitOfWork
+from app.bootstrap.unit_of_work import InMemoryUnitOfWork
 from app.main import create_app
+from app.modules.identity.application.auth import LoginUser, RegisterUser
+from app.modules.identity.application.security import ArgonPasswordHasher, JwtTokenIssuer
+from app.shared.clock import SystemClock
+from app.shared.config import Settings
 from fastapi.testclient import TestClient
 
 

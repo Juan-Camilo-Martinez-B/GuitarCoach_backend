@@ -1,12 +1,16 @@
 """El caso de uso recalcula la precisión y no confía en un porcentaje enviado por el cliente."""
 
-from app.application.security import SystemClock
-from app.application.use_cases.register_attempt import RegisterAttempt, TelemetryEvent
-from app.domain.entities.song import ChartChord, Song
-from app.domain.services.attempt_assessor import AttemptAssessor
-from app.domain.value_objects.bpm import Bpm
-from app.domain.value_objects.chord import Chord
-from app.infrastructure.db.memory import InMemoryUnitOfWork
+from app.bootstrap.unit_of_work import InMemoryUnitOfWork
+from app.modules.catalog.domain.song import ChartChord, Song
+from app.modules.practice.application.register_attempt import (
+    RegisterAttempt,
+    TelemetryEvent,
+    hit_window_ms,
+)
+from app.modules.practice.domain.attempt_assessor import AttemptAssessor
+from app.shared.clock import SystemClock
+from app.shared.music.bpm import Bpm
+from app.shared.music.chord import Chord
 
 
 async def test_guarda_el_intento_con_la_precision_calculada() -> None:
@@ -46,7 +50,7 @@ async def _user(uow: InMemoryUnitOfWork):
     from datetime import UTC, datetime
     from uuid import uuid4
 
-    from app.domain.entities.user import User
+    from app.modules.identity.domain.user import User
 
     user = User(
         id=uuid4(),
@@ -60,3 +64,10 @@ async def _user(uow: InMemoryUnitOfWork):
     )
     await uow.users.add(user)
     return user.id
+
+
+def test_la_ventana_de_acierto_no_pasa_de_medio_tiempo() -> None:
+    assert hit_window_ms(150, 72) == 150
+    assert hit_window_ms(150, 200) == 150
+    assert hit_window_ms(150, 240) == 125
+    assert hit_window_ms(150, 300) == 100
