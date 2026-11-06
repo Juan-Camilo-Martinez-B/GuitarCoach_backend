@@ -28,8 +28,6 @@ class Settings(BaseSettings):
     scrape_min_interval_seconds: float = 1.0
     scrape_max_concurrency: int = 2
     auth_requests_per_minute: int = 20
-    daily_audio_limit: int = 10
-    audio_timeout_seconds: float = 120
     hit_window_ms: int = 150
     redis_url: str = ""
 

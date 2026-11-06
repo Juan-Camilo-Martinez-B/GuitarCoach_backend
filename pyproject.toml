@@ -34,11 +34,6 @@ dev = [
     "fakeredis>=2.26.0",
 ]
 
-analysis = [
-    "librosa>=0.10.2",
-    "soundfile>=0.12.1",
-]
-
 [tool.setuptools.packages.find]
 include = ["app*"]
 

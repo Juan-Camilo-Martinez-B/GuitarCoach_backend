@@ -1,16 +1,22 @@
 """La guía es privada, no se duplica y deja una canción para practicar."""
 
+import json
+
 from app.core.config import Settings
+from app.domain.services.guide_import import guide_from_text
 from app.main import create_app
 from fastapi.testclient import TestClient
 
-PASTED = {
-    "title": "Mi canción",
-    "artist": "Ana",
-    "text": "[Intro]\nG D Em C\n[Coro]\nAm D7\nletra que no se guarda",
-    "bpm": 96,
-    "strum": "D-DU-UDU",
-}
+GP5 = b"\x18FICHIER GUITAR PRO v5.00" + b"\x00" * 64
+# La guía que arma el navegador al leer la tablatura: secciones, acordes y golpes.
+DOCUMENT = guide_from_text(
+    "[Intro]\nG D Em C\n[Coro]\nAm D7",
+    "x",
+    title="Mi canción",
+    artist="Ana",
+    bpm=96,
+    strum="D-DU-UDU",
+).as_dict()
 
 
 def _token(client: TestClient, email: str) -> dict[str, str]:
@@ -24,11 +30,20 @@ def _client() -> TestClient:
     return TestClient(create_app(Settings(environment="local", auth_requests_per_minute=100)))
 
 
-def test_pegar_dos_veces_lo_mismo_devuelve_la_misma_guia() -> None:
+def _upload(client: TestClient, headers: dict[str, str], document: str | None = None):
+    return client.post(
+        "/guides/from-tab",
+        data={"guide": document or json.dumps(DOCUMENT)},
+        files={"file": ("riff.gp5", GP5, "application/octet-stream")},
+        headers=headers,
+    )
+
+
+def test_subir_dos_veces_la_misma_tablatura_devuelve_la_misma_guia() -> None:
     with _client() as client:
-        headers = _token(client, "pegar@example.com")
-        first = client.post("/guides/paste", json=PASTED, headers=headers)
-        second = client.post("/guides/paste", json=PASTED, headers=headers)
+        headers = _token(client, "repetir@example.com")
+        first = _upload(client, headers)
+        second = _upload(client, headers)
         assert first.status_code == 201
         assert second.status_code == 200
         assert first.json()["id"] == second.json()["id"]
@@ -36,14 +51,23 @@ def test_pegar_dos_veces_lo_mismo_devuelve_la_misma_guia() -> None:
         assert body["status"] == "borrador"
         assert [section["name"] for section in body["guide"]["sections"]] == ["Intro", "Coro"]
         assert "lyrics" not in body["guide"]
-        assert "letra" not in str(body["guide"])
+
+
+def test_los_flujos_de_texto_y_audio_ya_no_existen() -> None:
+    with _client() as client:
+        headers = _token(client, "viejos@example.com")
+        files = {"file": ("vals.cho", b"[Am] [E7]", "text/plain")}
+        gone = {404, 405}
+        assert client.post("/guides/paste", json={}, headers=headers).status_code in gone
+        assert client.post("/guides/upload", files=files, headers=headers).status_code in gone
+        assert client.post("/guides/from-audio", files=files, headers=headers).status_code in gone
 
 
 def test_otro_usuario_no_ve_ni_corrige_la_guia() -> None:
     with _client() as client:
         owner = _token(client, "duena@example.com")
         intruder = _token(client, "otro@example.com")
-        guide_id = client.post("/guides/paste", json=PASTED, headers=owner).json()["id"]
+        guide_id = _upload(client, owner).json()["id"]
         assert client.get(f"/guides/{guide_id}", headers=intruder).status_code == 404
         assert client.get("/guides", headers=intruder).json() == []
         document = client.get(f"/guides/{guide_id}", headers=owner).json()["guide"]
@@ -54,7 +78,7 @@ def test_otro_usuario_no_ve_ni_corrige_la_guia() -> None:
 def test_corregir_la_guia_la_marca_revisada_y_cambia_la_cancion() -> None:
     with _client() as client:
         headers = _token(client, "editar@example.com")
-        created = client.post("/guides/paste", json=PASTED, headers=headers).json()
+        created = _upload(client, headers).json()
         document = created["guide"]
         document["chords"][0]["chord"] = "Cadd9"
         document["bpm"] = 80
@@ -75,7 +99,7 @@ def test_corregir_la_guia_la_marca_revisada_y_cambia_la_cancion() -> None:
 def test_la_guia_no_acepta_letra_ni_acordes_inventados() -> None:
     with _client() as client:
         headers = _token(client, "validar@example.com")
-        created = client.post("/guides/paste", json=PASTED, headers=headers).json()
+        created = _upload(client, headers).json()
         document = created["guide"]
         document["chords"][0]["chord"] = "H7"
         response = client.put(
@@ -89,17 +113,64 @@ def test_la_guia_no_acepta_letra_ni_acordes_inventados() -> None:
 def test_la_cancion_de_la_guia_no_sale_en_la_busqueda_publica() -> None:
     with _client() as client:
         headers = _token(client, "privada@example.com")
-        client.post("/guides/paste", json=PASTED, headers=headers)
+        _upload(client, headers)
         found = client.get("/songs", params={"q": "Mi canción"}).json()
         assert found == []
 
 
-def test_subir_un_archivo_crea_la_guia_y_pide_sesion() -> None:
+def _tab_document() -> str:
+    document = json.loads(json.dumps(DOCUMENT))
+    document["title"] = "Riff"
+    document["melody"] = [{"start": 0, "beats": 1, "midi": 64}]
+    return json.dumps(document)
+
+
+def test_la_tablatura_crea_la_guia_y_guarda_el_archivo() -> None:
     with _client() as client:
-        files = {"file": ("vals.cho", b"{title: Vals}\n{time: 3/4}\n[Am] [E7]", "text/plain")}
-        assert client.post("/guides/upload", files=files).status_code == 422
-        headers = _token(client, "subir@example.com")
-        response = client.post("/guides/upload", files=files, headers=headers)
-        assert response.status_code == 201
-        assert response.json()["source_kind"] == "chordpro"
-        assert response.json()["guide"]["beats_per_bar"] == 3.0
+        headers = _token(client, "tab@example.com")
+        intruder = _token(client, "tab-otro@example.com")
+        document = _tab_document()
+        files = {"file": ("riff.gp5", GP5, "application/octet-stream")}
+        created = client.post(
+            "/guides/from-tab", data={"guide": document}, files=files, headers=headers
+        )
+        assert created.status_code == 201
+        body = created.json()
+        assert body["source_kind"] == "tablatura"
+        assert body["guide"]["melody"][0]["midi"] == 64
+        again = client.post(
+            "/guides/from-tab", data={"guide": document}, files=files, headers=headers
+        )
+        assert again.status_code == 200
+        assert again.json()["id"] == body["id"]
+        tab = client.get(f"/guides/{body['id']}/tab", headers=headers)
+        assert tab.status_code == 200
+        assert tab.content == GP5
+        assert tab.headers["x-tab-format"] == "gp345"
+        assert client.get(f"/guides/{body['id']}/tab", headers=intruder).status_code == 404
+
+
+def test_la_tablatura_se_reconoce_por_su_contenido() -> None:
+    with _client() as client:
+        headers = _token(client, "tab-falsa@example.com")
+        document = _tab_document()
+        fake = {"file": ("riff.gp5", b"%PDF-1.7 no es una tablatura", "application/pdf")}
+        rejected = client.post(
+            "/guides/from-tab", data={"guide": document}, files=fake, headers=headers
+        )
+        assert rejected.status_code in {400, 422}
+        broken = client.post(
+            "/guides/from-tab",
+            data={"guide": '{"title": "sin secciones"}'},
+            files={"file": ("riff.gp5", GP5, "application/octet-stream")},
+            headers=headers,
+        )
+        assert broken.status_code in {400, 422}
+
+
+def test_la_tablatura_se_pide_por_un_id_valido() -> None:
+    with _client() as client:
+        headers = _token(client, "sin-tab@example.com")
+        guide_id = _upload(client, headers).json()["id"]
+        assert client.get(f"/guides/{guide_id}/tab", headers=headers).status_code == 200
+        assert client.get("/guides/no-es-un-id/tab", headers=headers).status_code == 422

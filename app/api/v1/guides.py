@@ -1,45 +1,29 @@
-"""Guías de estudio de canciones elegidas por el usuario. Cada guía es privada de su dueño."""
+"""Guías de estudio de canciones elegidas por el usuario. Cada guía es privada de su dueño.
 
-import asyncio
-import time
+Una guía nace de una tablatura de Guitar Pro: el navegador la lee y el servidor la valida.
+"""
+
+import json
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Form, Header, Request, Response, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.api.deps import current_uow
-from app.api.middleware.rate_limit import SlidingWindowLimiter
 from app.api.v1.attempts import _bearer_user_id
 from app.application.security import SystemClock
 from app.application.use_cases.guides import GuideService
 from app.core.config import Settings
 from app.domain.entities.guide import GuideRecord, SongGuide
-from app.domain.errors import ExternalServiceError, RateLimitExceededError
-from app.domain.services.guide_import import (
-    MAX_BYTES,
-    guide_from_file,
-    guide_from_text,
-    guide_from_timeline,
-    parse_time_signature,
-)
-from app.infrastructure.audio.analysis import MAX_BYTES as MAX_AUDIO_BYTES
-from app.infrastructure.audio.analysis import analyze_bytes
+from app.domain.entities.guide_tab import MAX_TAB_BYTES, sniff_tab
+from app.domain.errors import InvalidValueError
 
 router = APIRouter(tags=["guides"])
 
-MAX_PASTED_CHARS = 20_000
-
-
-class PasteBody(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
-    artist: str = Field(min_length=1, max_length=120)
-    text: str = Field(min_length=1, max_length=MAX_PASTED_CHARS)
-    bpm: int | None = Field(default=None, ge=20, le=300)
-    time: str | None = Field(default=None, max_length=5)
-    capo: int | None = Field(default=None, ge=0, le=12)
-    strum: str | None = Field(default=None, max_length=32)
+# La guía de una tablatura larga trae miles de notas y golpes.
+MAX_GUIDE_JSON_CHARS = 2_000_000
 
 
 class StrumDocument(BaseModel):
@@ -145,90 +129,48 @@ def _full(record: GuideRecord) -> GuideResponse:
     return GuideResponse(**_summary(record).model_dump(), guide=record.guide.as_dict())
 
 
-@router.post("/guides/paste", status_code=201)
-async def paste_guide(
-    body: PasteBody,
-    request: Request,
-    response: Response,
-    authorization: str = Header(),
-) -> GuideResponse:
-    owner_id = _owner(request, authorization)
-    guide = guide_from_text(
-        body.text,
-        body.title,
-        title=body.title,
-        artist=body.artist,
-        bpm=body.bpm,
-        beats_per_bar=parse_time_signature(body.time) if body.time else None,
-        capo=body.capo,
-        strum=body.strum,
-    )
-    record, created = await _service(request).create(owner_id, guide, "pegado")
-    if not created:
-        response.status_code = 200
-    return _full(record)
-
-
-@router.post("/guides/upload", status_code=201)
-async def upload_guide(
+@router.post("/guides/from-tab", status_code=201)
+async def guide_from_tab(
     file: UploadFile,
     request: Request,
     response: Response,
+    guide: str = Form(min_length=2, max_length=MAX_GUIDE_JSON_CHARS),
     authorization: str = Header(),
 ) -> GuideResponse:
+    """Guarda una tablatura con la guía que el navegador leyó de ella.
+
+    El servidor no confía en el cliente: valida la guía con el mismo esquema que una
+    corrección y reconoce el formato del archivo por su contenido.
+    """
     owner_id = _owner(request, authorization)
-    # Se lee un byte de más para detectar el exceso sin cargar archivos enormes.
-    raw = await file.read(MAX_BYTES + 1)
-    guide, kind = guide_from_file(file.filename or "carta.cho", raw)
-    record, created = await _service(request).create(owner_id, guide, kind)
+    raw = await file.read(MAX_TAB_BYTES + 1)
+    if len(raw) > MAX_TAB_BYTES:
+        raise InvalidValueError("La tablatura supera 5 MB.")
+    tab_format = sniff_tab(raw)
+    if tab_format is None:
+        raise InvalidValueError("Sube una tablatura Guitar Pro, MusicXML o MIDI.")
+    try:
+        document = GuideDocument.model_validate(json.loads(guide))
+    except (json.JSONDecodeError, ValidationError) as error:
+        raise InvalidValueError("La guía de la tablatura no es válida.") from error
+    parsed = SongGuide.from_dict(document.model_dump())
+    record, created = await _service(request).create_from_tab(owner_id, parsed, tab_format, raw)
     if not created:
         response.status_code = 200
     return _full(record)
 
 
-@router.post("/guides/from-audio", status_code=201)
-async def guide_from_audio(
-    file: UploadFile,
-    request: Request,
-    response: Response,
-    title: str = Form(min_length=1, max_length=120),
-    artist: str = Form(min_length=1, max_length=120),
-    melody: bool = Form(default=False),
-    authorization: str = Header(),
-) -> GuideResponse:
-    """Analiza un audio propio y deja una guía en borrador. El audio no se guarda."""
+@router.get("/guides/{guide_id}/tab")
+async def read_guide_tab(
+    guide_id: UUID, request: Request, authorization: str = Header()
+) -> Response:
     owner_id = _owner(request, authorization)
-    limiter = request.app.state.audio_limiter
-    slots = request.app.state.audio_slots
-    settings = request.app.state.settings
-    if not isinstance(limiter, SlidingWindowLimiter) or not isinstance(settings, Settings):
-        raise RuntimeError("El análisis de audio no está configurado.")
-    if not limiter.allow(str(owner_id), time.monotonic()):
-        raise RateLimitExceededError("Llegaste al límite de análisis de audio por hoy.")
-    raw = await file.read(MAX_AUDIO_BYTES + 1)
-    async with slots:
-        try:
-            analysis = await asyncio.wait_for(
-                asyncio.to_thread(analyze_bytes, raw, melody=melody),
-                timeout=settings.audio_timeout_seconds,
-            )
-        except TimeoutError as error:
-            raise ExternalServiceError(
-                "El análisis tardó demasiado. Prueba con un audio más corto."
-            ) from error
-    guide = guide_from_timeline(
-        title,
-        artist,
-        analysis.bpm,
-        [(chord.start, chord.beats, chord.symbol) for chord in analysis.chords],
-        [(note.start, note.beats, note.midi) for note in analysis.melody],
-        tempo=list(analysis.tempo),
-        onsets=list(analysis.onsets),
+    tab = await _service(request).tab(owner_id, guide_id)
+    return Response(
+        content=tab.data,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "private, max-age=3600", "X-Tab-Format": tab.format},
     )
-    record, created = await _service(request).create(owner_id, guide, "audio")
-    if not created:
-        response.status_code = 200
-    return _full(record)
 
 
 @router.get("/guides")

@@ -18,7 +18,7 @@ from app.domain.value_objects.bpm import Bpm
 from app.domain.value_objects.chord import Chord
 
 GUIDE_VERSION = 2
-SOURCE_KINDS = ("pegado", "chordpro", "musicxml", "audio", "editor")
+SOURCE_KINDS = ("pegado", "chordpro", "musicxml", "audio", "editor", "tablatura")
 STATUSES = ("borrador", "revisada")
 STRUM_DIRECTIONS = ("abajo", "arriba", "apagado")
 STRUM_CONTACTS = ("golpe", "chuck", "aire")

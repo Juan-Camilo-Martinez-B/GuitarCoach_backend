@@ -59,3 +59,42 @@ async def test_la_guia_se_guarda_y_se_corrige_en_postgres() -> None:
             await session.execute(delete(UserModel).where(UserModel.id == user.id))
             await session.commit()
         await engine.dispose()
+
+
+async def test_la_tablatura_se_guarda_aparte_en_postgres() -> None:
+    engine = create_engine(os.environ["DATABASE_URL"])
+    factory = create_session_factory(engine)
+    user = User(
+        id=uuid4(),
+        email=f"tab-{uuid4().hex[:8]}@example.com",
+        display_name="Tab",
+        level="beginner",
+        password_hash="hash",
+        oauth_subject=None,
+        latency_offset_ms=0,
+        created_at=SystemClock().now(),
+    )
+    guide = guide_from_text("[Verso]\nAm G C", "x", title=f"Tab {user.id}", artist="Ana")
+    data = b"\x18FICHIER GUITAR PRO v5.00" + bytes(range(256))
+    try:
+        async with factory() as session:
+            uow = SqlUnitOfWork(session)
+            await uow.users.add(user)
+            await uow.commit()
+            service = GuideService(uow, SystemClock())
+            record, created = await service.create_from_tab(user.id, guide, "gp345", data)
+            again, created_again = await service.create_from_tab(user.id, guide, "gp345", data)
+            assert created and not created_again
+            assert again.id == record.id
+
+        async with factory() as session:
+            service = GuideService(SqlUnitOfWork(session), SystemClock())
+            tab = await service.tab(user.id, record.id)
+            assert (tab.format, tab.data) == ("gp345", data)
+            assert (await service.get(user.id, record.id)).source_kind == "tablatura"
+    finally:
+        async with factory() as session:
+            await session.execute(delete(SongGuideModel).where(SongGuideModel.owner_id == user.id))
+            await session.execute(delete(UserModel).where(UserModel.id == user.id))
+            await session.commit()
+        await engine.dispose()

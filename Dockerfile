@@ -7,10 +7,7 @@ RUN useradd --create-home --shell /usr/sbin/nologin appuser
 COPY pyproject.toml README.md ./
 COPY app ./app
 
-# Incluye el análisis de audio (librosa). numba guarda su caché en /tmp porque el
-# usuario de la app no puede escribir en site-packages.
-ENV NUMBA_CACHE_DIR=/tmp/numba-cache
-RUN pip install --no-cache-dir ".[analysis]"
+RUN pip install --no-cache-dir .
 
 USER appuser
 

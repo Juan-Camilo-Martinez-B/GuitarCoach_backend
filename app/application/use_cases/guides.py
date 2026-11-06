@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from app.application.security import Clock
 from app.domain.entities.guide import STATUSES, GuideRecord, SongGuide
+from app.domain.entities.guide_tab import GuideTab
 from app.domain.entities.song import Song
 from app.domain.errors import ConflictError, InvalidValueError, NotFoundError
 from app.domain.interfaces.repositories import UnitOfWork
@@ -41,6 +42,23 @@ class GuideService:
         await self._uow.guides.add(record)
         await self._uow.commit()
         return record, True
+
+    async def create_from_tab(
+        self, owner_id: UUID, guide: SongGuide, tab_format: str, data: bytes
+    ) -> tuple[GuideRecord, bool]:
+        """La guía que el navegador armó de la tablatura, con el archivo para volver a tocarla."""
+        record, created = await self.create(owner_id, guide, "tablatura")
+        if await self._uow.guides.get_tab(record.id) is None:
+            await self._uow.guides.add_tab(GuideTab(record.id, tab_format, data))
+            await self._uow.commit()
+        return record, created
+
+    async def tab(self, owner_id: UUID, guide_id: UUID) -> GuideTab:
+        await self.get(owner_id, guide_id)
+        tab = await self._uow.guides.get_tab(guide_id)
+        if tab is None:
+            raise NotFoundError("Esta guía no tiene tablatura.")
+        return tab
 
     async def list(self, owner_id: UUID) -> tuple[GuideRecord, ...]:
         return await self._uow.guides.list_for_owner(owner_id)

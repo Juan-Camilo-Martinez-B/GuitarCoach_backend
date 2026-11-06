@@ -7,7 +7,6 @@ from app.domain.services.guide_import import (
     guide_from_file,
     guide_from_musicxml,
     guide_from_text,
-    guide_from_timeline,
 )
 from app.domain.value_objects.chord import Chord
 
@@ -222,27 +221,6 @@ def test_no_confunde_palabras_con_acordes(raw: str) -> None:
     assert Chord.read(raw) is None
 
 
-def test_el_audio_ubica_el_primer_tiempo_donde_cambian_los_acordes() -> None:
-    # El pulso arrancó en el tiempo 2: cada acorde dura cuatro pero empieza en 3, 7, 11...
-    chords = [(0.0, 3.0, "Am"), (3.0, 4.0, "F"), (7.0, 4.0, "C"), (11.0, 4.0, "G")]
-    guide = guide_from_timeline("Toma", "Ana", 100, chords)
-    assert [(chord.start, chord.beats, chord.chord.symbol) for chord in guide.chords] == [
-        (0.0, 4.0, "Am"),
-        (4.0, 4.0, "F"),
-        (8.0, 4.0, "C"),
-        (12.0, 4.0, "G"),
-    ]
-    assert guide.sections[0].name == "Parte 1"
-
-
-def test_el_audio_alineado_no_se_mueve() -> None:
-    chords = [(0.0, 4.0, "G"), (4.0, 4.0, "D")]
-    guide = guide_from_timeline("Toma", "Ana", 100, chords)
-    assert [chord.start for chord in guide.chords] == [0.0, 4.0]
-    assert {event.origin for event in guide.events} == {"leccion"}
-    assert guide.melody == ()
-
-
 def test_una_guia_vieja_se_materializa_al_leerla() -> None:
     raw = guide_from_text("G", "x").as_dict()
     raw["version"] = 1
@@ -252,15 +230,6 @@ def test_una_guia_vieja_se_materializa_al_leerla() -> None:
     assert again.tempo[0].pulse == 0.0
     assert again.events
     assert again.events[0].origin == "escrito"
-
-
-def test_el_mapa_de_tempo_parte_cuando_el_pulso_cambia() -> None:
-    from app.infrastructure.audio.analysis import cluster_onsets, tempo_points_from_beats
-
-    points = tempo_points_from_beats([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0])
-    assert points[0] == (0.0, 500_000)
-    assert points[1] == (4.0, 1_000_000)
-    assert cluster_onsets([0.0, 0.01, 0.02, 0.2]) == [0.0, 0.2]
 
 
 def _score(parts: str, part_list: str = "") -> str:

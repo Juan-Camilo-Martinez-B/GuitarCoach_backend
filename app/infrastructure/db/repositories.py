@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.attempt import Attempt, ChordMetric
 from app.domain.entities.guide import GuideRecord, SongGuide
+from app.domain.entities.guide_tab import GuideTab
 from app.domain.entities.report import Report, ReportContent
 from app.domain.entities.scrape_job import ScrapeJob
 from app.domain.entities.song import PRIVATE_SOURCES, ChartChord, Song
@@ -19,6 +20,7 @@ from app.domain.value_objects.hit_result import HitResult
 from app.infrastructure.db.models import (
     AttemptModel,
     ChordMetricModel,
+    GuideTabModel,
     LessonProgressModel,
     ReportModel,
     ScrapeJobModel,
@@ -427,6 +429,14 @@ class SqlGuideRepository:
         row.content_hash = record.content_hash
         row.updated_at = record.updated_at
         await self._session.flush()
+
+    async def add_tab(self, tab: GuideTab) -> None:
+        self._session.add(GuideTabModel(guide_id=tab.guide_id, format=tab.format, data=tab.data))
+        await self._session.flush()
+
+    async def get_tab(self, guide_id: UUID) -> GuideTab | None:
+        row = await self._session.get(GuideTabModel, guide_id)
+        return None if row is None else GuideTab(row.guide_id, row.format, row.data)
 
 
 class SqlUnitOfWork:

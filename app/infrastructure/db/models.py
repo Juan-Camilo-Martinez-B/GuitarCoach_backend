@@ -3,7 +3,17 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Identity, Integer, Numeric, Text, func
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Integer,
+    LargeBinary,
+    Numeric,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -133,3 +143,16 @@ class SongGuideModel(Base):
     content_hash: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GuideTabModel(Base):
+    """El archivo va en su propia tabla: listar guías no arrastra los bytes."""
+
+    __tablename__ = "guide_tabs"
+
+    guide_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("song_guides.id"), primary_key=True
+    )
+    format: Mapped[str] = mapped_column(Text)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

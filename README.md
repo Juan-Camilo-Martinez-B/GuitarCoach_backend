@@ -48,8 +48,8 @@ Una guía es la versión de estudio de una canción que eligió el usuario. Guar
 
 | Endpoint | Qué hace |
 | --- | --- |
-| `POST /guides/paste` | Recibe título, artista y el texto copiado de un cancionero (acordes sobre la letra), con tempo, compás, cejilla y rasgueo opcionales. |
-| `POST /guides/upload` | Recibe ChordPro (`.cho`, `.chopro`, `.pro`, `.txt`) o MusicXML sin comprimir, de hasta 200 KB. |
+| `POST /guides/from-tab` | La única forma de crear una guía. Recibe la tablatura de Guitar Pro (hasta 5 MB) y la guía que el navegador armó de ella con alphaTab: acordes, rasgueos y notas de la guitarra. Valida la guía con el mismo esquema que `PUT`, reconoce el formato por la firma del archivo (no por la extensión) y guarda el archivo en `guide_tabs`. |
+| `GET /guides/{id}/tab` | Devuelve el archivo de la tablatura para tocarla en la guía. |
 | `GET /guides` | Lista las guías del usuario. |
 | `GET /guides/{id}` | Devuelve la guía completa. |
 | `PUT /guides/{id}` | Guarda la guía corregida en el editor y su estado (`borrador` o `revisada`). |
@@ -60,31 +60,18 @@ Reglas:
 - Crear es idempotente: el mismo contenido para el mismo usuario devuelve la guía que ya existe (200 en vez de 201).
 - Cada guía tiene una canción de práctica (`song_id`) para que los intentos y el informe funcionen igual que con el catálogo. Esas canciones no aparecen en la búsqueda pública.
 
-Cómo lee el texto `app/domain/services/guide_import.py`:
+Ya no se crean guías pegando texto, subiendo ChordPro ni analizando un audio: un cifrado o una grabación no dicen qué tocó la guitarra, y la tablatura sí. Los lectores de texto y MusicXML de `app/domain/services/guide_import.py` siguen en uso para la carta que se sube a la biblioteca (`POST /songs/upload`):
 
 - Una línea solo de acordes (`G  D  Em  C`) da un compás por acorde. Acepta nombres en español (`Lam`, `Sol/Si`) y las variantes de los cancioneros (`C7M`, `Bm7(b5)`).
 - Con barras, cada tramo entre `|` es un compás; `.` prolonga el acorde un casillero y `%` repite el compás anterior. `| D7 . G . |` son dos acordes de dos pulsos.
 - `x2` al final de la línea la repite.
 - `[Intro]`, `Coro:` o `{start_of_chorus}` abren una sección. `Capo 2` o `{capo: 2}` fijan la cejilla, y `{time: 3/4}` el compás.
 - El rasgueo se escribe en casilleros: `D-DU-UDU` son ocho corcheas en 4/4 (D abajo, U arriba, X apagado, - silencio).
-- MusicXML respeta `divisions`, el compás, los tipos de acorde, las ligaduras y los silencios. Rechaza documentos con entidades.
-
-## Guía desde un audio propio
-
-`POST /guides/from-audio` recibe una grabación del usuario (WAV, MP3, OGG o FLAC, hasta 10 MB y 6 minutos), con título, artista y, si es una sola voz, la opción de detectar la melodía. Devuelve una guía en borrador para corregir en el editor.
-
-Cómo la analiza `app/infrastructure/audio/analysis.py`:
-
-1. Reconoce el formato por los primeros bytes, no por la extensión. Escribe el archivo en un directorio temporal que **se borra siempre** al terminar; el audio nunca llega a la base.
-2. Detecta el pulso con `librosa.beat.beat_track` y calcula el tempo con la mediana entre pulsos.
-3. Separa la parte armónica, calcula un cromagrama CQT y lo agrupa por pulso.
-4. Compara cada pulso con 24 plantillas de tríadas (la fundamental pesa más) y un estado "sin acorde" para el silencio, y suaviza la secuencia con Viterbi.
-5. Ubica el primer tiempo del compás donde más cambios de acorde coinciden (`align_downbeat`) y parte la canción en tramos de ocho compases.
-6. Si se pide, estima la melodía con pYIN. Solo sirve para una voz sola, no para una mezcla.
-
-Funciona bien con guitarra sola y peor con canciones mezcladas (voz y batería); por eso el resultado es un borrador. Usa mucha CPU: corre en un hilo aparte, de a uno por proceso, con 120 segundos de tope (`AUDIO_TIMEOUT_SECONDS`) y un límite diario por usuario (`DAILY_AUDIO_LIMIT`, 10 por defecto).
-
-Las dependencias son opcionales: `pip install -e ".[analysis]"` instala `librosa` y `soundfile`. Sin ellas el resto de la API funciona y este endpoint responde que el análisis no está instalado. La imagen de Docker y el CI las incluyen. Con ellas la imagen pesa cerca de 1 GB (numba, scipy y scikit-learn vienen con librosa); `NUMBA_CACHE_DIR` apunta a `/tmp` porque el usuario sin privilegios del contenedor no puede escribir la caché de numba en `site-packages`.
+- MusicXML respeta `divisions`, el compás, los tipos de acorde, las ligaduras y los silencios. Rechaza documentos con entidades. Además:
+  - **Parte**: lee la de guitarra (la que trae tablatura o se llama guitarra) y no la primera, que puede ser la voz o el piano.
+  - **Altura real**: la guitarra se escribe una octava por encima de como suena. La nota sale de la cuerda y el traste de la tablatura, más la cejilla; si no hay tablatura, de lo escrito más `<transpose>`.
+  - **Repeticiones**: despliega las barras de repetición y las casillas de 1.ª y 2.ª vez, para que la guía dure lo que dura la canción.
+- **Sin melodía inventada**: si el origen no trae notas, la guía queda sin melodía. Antes se guardaban la fundamental y la tercera de cada acorde como si fueran la melodía, y eso sonaba a otra canción.
 
 La variante de capa gratuita usa Neon o Supabase y la API de Groq. El detalle de variables, alertas de presupuesto y Cloud Run está en `docs/despliegue.md`. El registro de la versión 1.0.0 está en `CHANGELOG.md`.
 

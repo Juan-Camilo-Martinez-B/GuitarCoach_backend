@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.domain.entities.attempt import Attempt, ChordMetric
 from app.domain.entities.guide import GuideRecord
+from app.domain.entities.guide_tab import GuideTab
 from app.domain.entities.report import Report
 from app.domain.entities.scrape_job import ScrapeJob
 from app.domain.entities.song import PRIVATE_SOURCES, Song
@@ -180,6 +181,7 @@ class InMemoryStudies:
 class InMemoryGuides:
     def __init__(self) -> None:
         self._items: dict[UUID, GuideRecord] = {}
+        self._tabs: dict[UUID, GuideTab] = {}
 
     async def add(self, record: GuideRecord) -> None:
         self._items[record.id] = record
@@ -203,6 +205,12 @@ class InMemoryGuides:
 
     async def save(self, record: GuideRecord) -> None:
         self._items[record.id] = record
+
+    async def add_tab(self, tab: GuideTab) -> None:
+        self._tabs[tab.guide_id] = tab
+
+    async def get_tab(self, guide_id: UUID) -> GuideTab | None:
+        return self._tabs.get(guide_id)
 
 
 class InMemoryUnitOfWork:
