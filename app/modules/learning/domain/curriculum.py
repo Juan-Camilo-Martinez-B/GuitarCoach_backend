@@ -107,10 +107,11 @@ LESSONS: tuple[Lesson, ...] = (
         "Canción: Lamento boliviano",
         "La armonía de la canción, en su tempo, sin la letra.",
         (
-            "Va a 124 BPM, el tempo de la canción, en compás de cuatro.",
-            "La armonía es Mim, Sim7, Lam y, en el último compás, Mim y Si7. Sim7 va sin cejilla.",
-            "El primer rasgueo dura un tiempo; los cinco siguientes, medio tiempo.",
-            "No incluye la letra. Practica Mim, Sim7, Lam, Mim y Si7.",
+            "Va a 120 BPM, en compás de cuatro. Acordes, rasgueo y melodía se repiten siempre.",
+            "El ciclo dura ocho compases: dos de Mim, dos de Sim, dos de Lam, uno de Mim y uno "
+            "de Si7. Sim lleva cejilla en el traste 2.",
+            "En el rasgueo, el primer y el tercer golpe duran un tiempo; los otros cuatro, medio.",
+            "La melodía es un arpegio de corcheas que sigue los acordes. No incluye la letra.",
         ),
         "Lamento boliviano",
     ),
