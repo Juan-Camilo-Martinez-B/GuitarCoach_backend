@@ -50,9 +50,9 @@ CATALOG = (
     _song(
         "Lamento boliviano",
         "GuitarCoach",
-        "Em",
+        "Am",
         120,
-        [(1, 1, "Em"), (3, 1, "Bm"), (5, 1, "Am"), (7, 1, "Em"), (8, 1, "B7")],
+        [(1, 1, "Am"), (3, 1, "Em"), (5, 1, "Dm"), (7, 1, "Am"), (8, 1, "E7")],
         "https://guitarcoach.local/catalogo/lamento-boliviano",
         "catalogo-lamento-boliviano",
     ),

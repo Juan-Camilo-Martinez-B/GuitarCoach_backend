@@ -108,8 +108,8 @@ LESSONS: tuple[Lesson, ...] = (
         "La armonía de la canción, en su tempo, sin la letra.",
         (
             "Va a 120 BPM, en compás de cuatro. Acordes, rasgueo y melodía se repiten siempre.",
-            "El ciclo dura ocho compases: dos de Mim, dos de Sim, dos de Lam, uno de Mim y uno "
-            "de Si7. Sim lleva cejilla en el traste 2.",
+            "Está en La menor para que todos los acordes sean abiertos. El ciclo dura ocho "
+            "compases: dos de Lam, dos de Mim, dos de Rem, uno de Lam y uno de Mi7.",
             "En el rasgueo, el primer y el tercer golpe duran un tiempo; los otros cuatro, medio.",
             "La melodía es un arpegio de corcheas que sigue los acordes. No incluye la letra.",
         ),

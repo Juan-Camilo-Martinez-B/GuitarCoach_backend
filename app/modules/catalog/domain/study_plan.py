@@ -31,7 +31,7 @@ _SOLFEGE = {
 _FLATS = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
 
 
-_OPEN = {"C", "D", "E", "Em", "G", "A", "Am", "Dm"}
+_OPEN = {"C", "D", "E", "E7", "Em", "G", "A", "Am", "Dm"}
 
 
 _STRUM = ("abajo", "abajo", "arriba", "arriba", "abajo", "arriba")
