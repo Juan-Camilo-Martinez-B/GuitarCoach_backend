@@ -6,11 +6,15 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from app.core.config import Settings
-from app.domain.entities.scrape_job import ScrapeJob
-from app.infrastructure.db.memory import InMemoryUnitOfWork
-from app.infrastructure.realtime.bus import MemoryEventBus, RedisEventBus, job_channel
+from app.bootstrap.unit_of_work import InMemoryUnitOfWork
 from app.main import create_app
+from app.modules.catalog.domain.scrape_job import ScrapeJob
+from app.modules.catalog.infrastructure.realtime.bus import (
+    MemoryEventBus,
+    RedisEventBus,
+    job_channel,
+)
+from app.shared.config import Settings
 from fakeredis import FakeAsyncRedis
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -38,7 +42,8 @@ def _token(client: TestClient) -> str:
 
 
 async def _pending(client: TestClient, owner: str | None = None) -> ScrapeJob:
-    from app.application.security import JwtTokenIssuer, SystemClock
+    from app.modules.identity.application.security import JwtTokenIssuer
+    from app.shared.clock import SystemClock
 
     user_id = None
     if owner is not None:

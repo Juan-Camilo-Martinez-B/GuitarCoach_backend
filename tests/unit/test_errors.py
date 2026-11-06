@@ -1,7 +1,7 @@
 """El manejador global no filtra excepciones de dominio como 500."""
 
-from app.api.middleware.errors import register_exception_handlers
-from app.domain.errors import NotFoundError
+from app.shared.errors import NotFoundError
+from app.shared.http.errors import register_exception_handlers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

@@ -1,15 +1,14 @@
 """Los lectores conservan compases, duraciones y secciones, y descartan la letra."""
 
 import pytest
-from app.domain.entities.guide import SongGuide, StrumPattern
-from app.domain.errors import InvalidValueError
-from app.domain.services.guide_import import (
+from app.modules.guides.domain.guide import SongGuide, StrumPattern
+from app.modules.guides.domain.guide_import import (
     guide_from_file,
     guide_from_musicxml,
     guide_from_text,
-    guide_from_timeline,
 )
-from app.domain.value_objects.chord import Chord
+from app.shared.errors import InvalidValueError
+from app.shared.music.chord import Chord
 
 PASTED = """Capo 2
 [Intro]
@@ -116,7 +115,8 @@ def test_sin_rasgueo_cada_seccion_cuenta_un_golpe_por_tiempo() -> None:
         ("G", 4.0),
         ("C", 4.0),
     ]
-    assert [note.midi for note in guide.melody][:2] == [69, 72]
+    # Sin notas escritas no se inventa una melodía.
+    assert guide.melody == ()
 
 
 def test_el_casillero_vacio_es_aire_y_no_se_inventa_el_fraseo() -> None:
@@ -221,27 +221,6 @@ def test_no_confunde_palabras_con_acordes(raw: str) -> None:
     assert Chord.read(raw) is None
 
 
-def test_el_audio_ubica_el_primer_tiempo_donde_cambian_los_acordes() -> None:
-    # El pulso arrancó en el tiempo 2: cada acorde dura cuatro pero empieza en 3, 7, 11...
-    chords = [(0.0, 3.0, "Am"), (3.0, 4.0, "F"), (7.0, 4.0, "C"), (11.0, 4.0, "G")]
-    guide = guide_from_timeline("Toma", "Ana", 100, chords)
-    assert [(chord.start, chord.beats, chord.chord.symbol) for chord in guide.chords] == [
-        (0.0, 4.0, "Am"),
-        (4.0, 4.0, "F"),
-        (8.0, 4.0, "C"),
-        (12.0, 4.0, "G"),
-    ]
-    assert guide.sections[0].name == "Parte 1"
-
-
-def test_el_audio_alineado_no_se_mueve() -> None:
-    chords = [(0.0, 4.0, "G"), (4.0, 4.0, "D")]
-    guide = guide_from_timeline("Toma", "Ana", 100, chords)
-    assert [chord.start for chord in guide.chords] == [0.0, 4.0]
-    assert {event.origin for event in guide.events} == {"leccion"}
-    assert guide.melody
-
-
 def test_una_guia_vieja_se_materializa_al_leerla() -> None:
     raw = guide_from_text("G", "x").as_dict()
     raw["version"] = 1
@@ -253,10 +232,91 @@ def test_una_guia_vieja_se_materializa_al_leerla() -> None:
     assert again.events[0].origin == "escrito"
 
 
-def test_el_mapa_de_tempo_parte_cuando_el_pulso_cambia() -> None:
-    from app.infrastructure.audio.analysis import cluster_onsets, tempo_points_from_beats
+def _score(parts: str, part_list: str = "") -> str:
+    return f"""<?xml version="1.0"?>
+<score-partwise>
+  <part-list>{part_list}</part-list>
+  {parts}
+</score-partwise>
+"""
 
-    points = tempo_points_from_beats([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0])
-    assert points[0] == (0.0, 500_000)
-    assert points[1] == (4.0, 1_000_000)
-    assert cluster_onsets([0.0, 0.01, 0.02, 0.2]) == [0.0, 0.2]
+
+def _note(step: str, octave: int, extra: str = "") -> str:
+    return (
+        f"<note><pitch><step>{step}</step><octave>{octave}</octave></pitch>"
+        f"<duration>4</duration><voice>1</voice>{extra}</note>"
+    )
+
+
+def test_la_guitarra_escrita_suena_una_octava_abajo() -> None:
+    attributes = (
+        "<attributes><divisions>1</divisions>"
+        "<transpose><diatonic>0</diatonic><chromatic>0</chromatic>"
+        "<octave-change>-1</octave-change></transpose></attributes>"
+    )
+    xml = _score(f'<part id="P1"><measure number="1">{attributes}{_note("E", 5)}</measure></part>')
+    guide = guide_from_musicxml(xml, "x")
+    assert [note.midi for note in guide.melody] == [64]
+
+
+def test_la_tablatura_da_la_altura_que_suena() -> None:
+    tuning = "".join(
+        f'<staff-tuning line="{line}"><tuning-step>{step}</tuning-step>'
+        f"<tuning-octave>{octave}</tuning-octave></staff-tuning>"
+        for line, (step, octave) in enumerate(
+            [("E", 2), ("A", 2), ("D", 3), ("G", 3), ("B", 3), ("E", 4)], start=1
+        )
+    )
+    attributes = (
+        "<attributes><divisions>1</divisions>"
+        f"<staff-details><staff-lines>6</staff-lines>{tuning}<capo>2</capo></staff-details>"
+        "</attributes>"
+    )
+    # Escrita mal a propósito: manda la cuerda y el traste. Tercera cuerda, traste 2, cejilla 2.
+    tab = "<notations><technical><string>3</string><fret>2</fret></technical></notations>"
+    xml = _score(
+        f'<part id="P1"><measure number="1">{attributes}{_note("C", 6, tab)}</measure></part>'
+    )
+    guide = guide_from_musicxml(xml, "x")
+    assert [note.midi for note in guide.melody] == [55 + 2 + 2]
+
+
+def test_se_elige_la_parte_de_guitarra() -> None:
+    part_list = (
+        '<score-part id="P1"><part-name>Voz</part-name></score-part>'
+        '<score-part id="P2"><part-name>Guitarra acústica</part-name></score-part>'
+    )
+    attributes = "<attributes><divisions>1</divisions></attributes>"
+    xml = _score(
+        f'<part id="P1"><measure number="1">{attributes}{_note("C", 5)}</measure></part>'
+        f'<part id="P2"><measure number="1">{attributes}{_note("G", 3)}</measure></part>',
+        part_list,
+    )
+    guide = guide_from_musicxml(xml, "x")
+    assert [note.midi for note in guide.melody] == [55]
+
+
+def test_las_repeticiones_y_casillas_se_despliegan() -> None:
+    attributes = "<attributes><divisions>1</divisions></attributes>"
+    forward = '<barline location="left"><repeat direction="forward"/></barline>'
+    first = (
+        '<barline location="left"><ending number="1" type="start"/></barline>'
+        '<barline location="right"><ending number="1" type="stop"/>'
+        '<repeat direction="backward"/></barline>'
+    )
+    second = (
+        '<barline location="left"><ending number="2" type="start"/></barline>'
+        '<barline location="right"><ending number="2" type="discontinue"/></barline>'
+    )
+    xml = _score(
+        '<part id="P1">'
+        f'<measure number="1">{attributes}{forward}{_note("C", 4)}</measure>'
+        f'<measure number="2">{first}{_note("D", 4)}</measure>'
+        f'<measure number="3">{second}{_note("E", 4)}</measure>'
+        f'<measure number="4">{_note("F", 4)}</measure>'
+        "</part>"
+    )
+    guide = guide_from_musicxml(xml, "x")
+    # C D | C E | F: la casilla 1 suena la primera vez y la 2 la segunda.
+    assert [note.midi for note in guide.melody] == [60, 62, 60, 64, 65]
+    assert [note.start for note in guide.melody] == [0.0, 4.0, 8.0, 12.0, 16.0]

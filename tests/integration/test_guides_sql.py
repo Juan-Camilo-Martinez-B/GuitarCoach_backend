@@ -6,13 +6,14 @@ import os
 from uuid import uuid4
 
 import pytest
-from app.application.security import SystemClock
-from app.application.use_cases.guides import GuideService
-from app.domain.entities.user import User
-from app.domain.services.guide_import import guide_from_text
-from app.infrastructure.db.models import SongGuideModel, UserModel
-from app.infrastructure.db.repositories import SqlUnitOfWork
-from app.infrastructure.db.session import create_engine, create_session_factory
+from app.bootstrap.unit_of_work import SqlUnitOfWork
+from app.modules.guides.application.service import GuideService
+from app.modules.guides.domain.guide_import import guide_from_text
+from app.modules.guides.infrastructure.models import SongGuideModel
+from app.modules.identity.domain.user import User
+from app.modules.identity.infrastructure.models import UserModel
+from app.shared.clock import SystemClock
+from app.shared.persistence.session import create_engine, create_session_factory
 from sqlalchemy import delete
 
 pytestmark = pytest.mark.skipif(
@@ -53,6 +54,45 @@ async def test_la_guia_se_guarda_y_se_corrige_en_postgres() -> None:
             updated = await service.update(user.id, first.id, guide, "revisada")
             assert updated.status == "revisada"
             assert len(await service.list(user.id)) == 1
+    finally:
+        async with factory() as session:
+            await session.execute(delete(SongGuideModel).where(SongGuideModel.owner_id == user.id))
+            await session.execute(delete(UserModel).where(UserModel.id == user.id))
+            await session.commit()
+        await engine.dispose()
+
+
+async def test_la_tablatura_se_guarda_aparte_en_postgres() -> None:
+    engine = create_engine(os.environ["DATABASE_URL"])
+    factory = create_session_factory(engine)
+    user = User(
+        id=uuid4(),
+        email=f"tab-{uuid4().hex[:8]}@example.com",
+        display_name="Tab",
+        level="beginner",
+        password_hash="hash",
+        oauth_subject=None,
+        latency_offset_ms=0,
+        created_at=SystemClock().now(),
+    )
+    guide = guide_from_text("[Verso]\nAm G C", "x", title=f"Tab {user.id}", artist="Ana")
+    data = b"\x18FICHIER GUITAR PRO v5.00" + bytes(range(256))
+    try:
+        async with factory() as session:
+            uow = SqlUnitOfWork(session)
+            await uow.users.add(user)
+            await uow.commit()
+            service = GuideService(uow, SystemClock())
+            record, created = await service.create_from_tab(user.id, guide, "gp345", data)
+            again, created_again = await service.create_from_tab(user.id, guide, "gp345", data)
+            assert created and not created_again
+            assert again.id == record.id
+
+        async with factory() as session:
+            service = GuideService(SqlUnitOfWork(session), SystemClock())
+            tab = await service.tab(user.id, record.id)
+            assert (tab.format, tab.data) == ("gp345", data)
+            assert (await service.get(user.id, record.id)).source_kind == "tablatura"
     finally:
         async with factory() as session:
             await session.execute(delete(SongGuideModel).where(SongGuideModel.owner_id == user.id))

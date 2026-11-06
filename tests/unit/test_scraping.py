@@ -3,14 +3,14 @@
 from pathlib import Path
 
 import pytest
-from app.application.security import SystemClock
-from app.application.use_cases.import_song import ImportSong
-from app.infrastructure.db.memory import InMemoryUnitOfWork
-from app.infrastructure.queue.local_dispatcher import LocalTaskDispatcher
-from app.infrastructure.scraping.open_fixture import OpenFixtureScraper
-from app.infrastructure.scraping.rate_limiter import DomainRateLimiter
-from app.infrastructure.scraping.registry import ScraperRegistry
-from app.infrastructure.scraping.robots import is_allowed
+from app.bootstrap.unit_of_work import InMemoryUnitOfWork
+from app.modules.catalog.application.import_song import ImportSong
+from app.modules.catalog.application.scraping.rate_limiter import DomainRateLimiter
+from app.modules.catalog.application.scraping.registry import ScraperRegistry
+from app.modules.catalog.application.scraping.robots import is_allowed
+from app.modules.catalog.infrastructure.scraping.open_fixture import OpenFixtureScraper
+from app.shared.clock import SystemClock
+from app.shared.tasks.local_dispatcher import LocalTaskDispatcher
 
 HTML = (Path(__file__).resolve().parents[1] / "fixtures" / "open_chart.html").read_text(
     encoding="utf-8"

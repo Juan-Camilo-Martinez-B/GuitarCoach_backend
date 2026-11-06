@@ -4,18 +4,20 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from app.application.use_cases.create_report import CreateReport
-from app.domain.entities.attempt import Attempt
-from app.domain.entities.report import ReportContent
-from app.domain.entities.song import ChartChord, Song
-from app.domain.entities.user import User
-from app.domain.errors import ExternalServiceError, RateLimitExceededError
-from app.domain.value_objects.bpm import Bpm
-from app.domain.value_objects.chord import Chord
-from app.domain.value_objects.hit_result import HitKind, HitResult
-from app.infrastructure.ai.groq_tutor import GroqTutor
-from app.infrastructure.ai.tutor import PromptBuilder, ReportDraft
-from app.infrastructure.db.memory import InMemoryUnitOfWork
+from app.bootstrap.unit_of_work import InMemoryUnitOfWork
+from app.modules.catalog.domain.song import ChartChord, Song
+from app.modules.coaching.application.create_report import CreateReport
+from app.modules.coaching.application.prompts import PromptBuilder
+from app.modules.coaching.domain.report import ReportContent
+from app.modules.coaching.domain.training_coach import LOCAL_MODEL
+from app.modules.coaching.infrastructure.groq_tutor import GroqTutor
+from app.modules.coaching.infrastructure.tutor import ReportDraft
+from app.modules.identity.domain.user import User
+from app.modules.practice.domain.attempt import Attempt
+from app.modules.practice.domain.hit_result import HitKind, HitResult
+from app.shared.errors import ExternalServiceError, RateLimitExceededError
+from app.shared.music.bpm import Bpm
+from app.shared.music.chord import Chord
 
 
 class FixedClock:
@@ -38,6 +40,11 @@ class FakeTutor:
         ).to_content()
 
 
+class DownTutor:
+    async def advise(self, prompt: str) -> ReportContent:
+        raise ExternalServiceError("Groq no respondió.")
+
+
 async def test_el_segundo_informe_igual_no_vuelve_a_llamar_al_modelo() -> None:
     uow = InMemoryUnitOfWork()
     user_id = await _user(uow)
@@ -52,6 +59,25 @@ async def test_el_segundo_informe_igual_no_vuelve_a_llamar_al_modelo() -> None:
     assert tutor.calls == 1
     assert second.content.diagnostico == first.content.diagnostico
     assert second.model == "cache"
+
+
+async def test_un_analisis_local_no_se_reutiliza_cuando_vuelve_el_tutor() -> None:
+    uow = InMemoryUnitOfWork()
+    user_id = await _user(uow)
+    song = await _song(uow)
+    assert song.id is not None
+    first_attempt = await _attempt(uow, user_id, song.id)
+    second_attempt = await _attempt(uow, user_id, song.id)
+    down = CreateReport(uow, DownTutor(), FixedClock(), daily_limit=5)
+    assert (await down.execute(user_id, first_attempt, "beginner")).model == LOCAL_MODEL
+
+    tutor = FakeTutor()
+    second = await CreateReport(uow, tutor, FixedClock(), daily_limit=5).execute(
+        user_id, second_attempt, "beginner"
+    )
+
+    assert tutor.calls == 1
+    assert second.model == "tutor"
 
 
 async def test_el_limite_diario_cuenta_informes_con_metricas_distintas() -> None:
@@ -79,13 +105,13 @@ async def test_el_limite_diario_bloquea_un_informe_nuevo() -> None:
 
 
 async def test_groq_sin_clave_no_llama_a_la_red() -> None:
-    tutor = GroqTutor("  ", "llama-3.3-70b-versatile")
+    tutor = GroqTutor("  ", "openai/gpt-oss-120b")
     with pytest.raises(ExternalServiceError, match="GROQ_API_KEY"):
         await tutor.advise("METRICAS")
 
 
 async def test_groq_rechaza_una_respuesta_que_no_es_json() -> None:
-    tutor = GroqTutor("clave-de-prueba", "llama-3.3-70b-versatile")
+    tutor = GroqTutor("clave-de-prueba", "openai/gpt-oss-120b")
 
     async def _invalid(_prompt: str) -> str:
         return "esto no es json"

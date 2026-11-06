@@ -6,16 +6,18 @@ import os
 from uuid import uuid4
 
 import pytest
-from app.application.security import SystemClock
-from app.application.use_cases.register_attempt import RegisterAttempt, TelemetryEvent
-from app.domain.entities.song import ChartChord, Song
-from app.domain.entities.user import User
-from app.domain.services.attempt_assessor import AttemptAssessor
-from app.domain.value_objects.bpm import Bpm
-from app.domain.value_objects.chord import Chord
-from app.infrastructure.db.models import AttemptModel, ChordMetricModel, SongModel, UserModel
-from app.infrastructure.db.repositories import SqlUnitOfWork
-from app.infrastructure.db.session import create_engine, create_session_factory
+from app.bootstrap.unit_of_work import SqlUnitOfWork
+from app.modules.catalog.domain.song import ChartChord, Song
+from app.modules.catalog.infrastructure.models import SongModel
+from app.modules.identity.domain.user import User
+from app.modules.identity.infrastructure.models import UserModel
+from app.modules.practice.application.register_attempt import RegisterAttempt, TelemetryEvent
+from app.modules.practice.domain.attempt_assessor import AttemptAssessor
+from app.modules.practice.infrastructure.models import AttemptModel, ChordMetricModel
+from app.shared.clock import SystemClock
+from app.shared.music.bpm import Bpm
+from app.shared.music.chord import Chord
+from app.shared.persistence.session import create_engine, create_session_factory
 from sqlalchemy import delete
 
 pytestmark = pytest.mark.skipif(

@@ -19,4 +19,5 @@ jobs:
             --region "${{ vars.GCP_REGION }}" \
             --project "${{ vars.GCP_PROJECT }}" \
             --port 8080 \
+            --update-env-vars ENVIRONMENT=production \
             --allow-unauthenticated

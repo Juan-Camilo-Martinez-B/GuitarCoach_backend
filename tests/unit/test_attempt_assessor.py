@@ -1,10 +1,10 @@
 """El resumen de un intento sale de los eventos, no de cifras enviadas por el cliente."""
 
 import pytest
-from app.domain.errors import InvalidValueError
-from app.domain.services.attempt_assessor import AttemptAssessor
-from app.domain.value_objects.chord import Chord
-from app.domain.value_objects.hit_result import HitResult
+from app.modules.practice.domain.attempt_assessor import AttemptAssessor
+from app.modules.practice.domain.hit_result import HitResult
+from app.shared.errors import InvalidValueError
+from app.shared.music.chord import Chord
 
 
 def test_resume_precision_y_la_transicion_fallida() -> None:

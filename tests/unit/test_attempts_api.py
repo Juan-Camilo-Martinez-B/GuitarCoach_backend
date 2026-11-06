@@ -1,10 +1,10 @@
 """POST /attempts exige token y devuelve la precisión calculada."""
 
-from app.core.config import Settings
-from app.domain.entities.song import ChartChord, Song
-from app.domain.value_objects.bpm import Bpm
-from app.domain.value_objects.chord import Chord
 from app.main import create_app
+from app.modules.catalog.domain.song import ChartChord, Song
+from app.shared.config import Settings
+from app.shared.music.bpm import Bpm
+from app.shared.music.chord import Chord
 from fastapi.testclient import TestClient
 
 SECRET = "secreto-de-prueba-con-longitud-suficiente"
