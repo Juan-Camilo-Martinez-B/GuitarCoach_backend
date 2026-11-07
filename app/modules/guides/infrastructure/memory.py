@@ -39,3 +39,7 @@ class InMemoryGuides:
 
     async def get_tab(self, guide_id: UUID) -> GuideTab | None:
         return self._tabs.get(guide_id)
+
+    async def delete(self, guide_id: UUID) -> None:
+        self._items.pop(guide_id, None)
+        self._tabs.pop(guide_id, None)

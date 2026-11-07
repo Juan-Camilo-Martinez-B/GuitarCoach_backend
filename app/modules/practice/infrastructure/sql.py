@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.practice.domain.attempt import Attempt, ChordMetric
@@ -106,6 +106,15 @@ class SqlAttemptRepository:
             )
             for row in rows
         )
+
+    async def delete(self, attempt_id: UUID) -> None:
+        await self._session.execute(
+            delete(ChordMetricModel).where(ChordMetricModel.attempt_id == attempt_id)
+        )
+        row = await self._session.get(AttemptModel, attempt_id)
+        if row is not None:
+            await self._session.delete(row)
+        await self._session.flush()
 
 
 def _attempt_to_entity(row: AttemptModel) -> Attempt:

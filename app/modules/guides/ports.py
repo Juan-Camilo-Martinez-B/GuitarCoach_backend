@@ -24,6 +24,8 @@ class GuideRepository(Protocol):
 
     async def get_tab(self, guide_id: UUID) -> GuideTab | None: ...
 
+    async def delete(self, guide_id: UUID) -> None: ...
+
 
 class GuidesStore(Transactional, Protocol):
     guides: GuideRepository

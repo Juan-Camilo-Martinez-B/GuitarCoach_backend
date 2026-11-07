@@ -17,6 +17,8 @@ class AttemptRepository(Protocol):
 
     async def metrics_for(self, attempt_id: UUID) -> tuple[ChordMetric, ...]: ...
 
+    async def delete(self, attempt_id: UUID) -> None: ...
+
 
 class PracticeStore(Transactional, Protocol):
     attempts: AttemptRepository

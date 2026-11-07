@@ -110,6 +110,19 @@ def test_la_guia_no_acepta_letra_ni_acordes_inventados() -> None:
         assert response.status_code == 422
 
 
+def test_el_dueno_borra_la_guia_y_su_archivo_y_otro_no_puede() -> None:
+    with _client() as client:
+        owner = _token(client, "borra-guia@example.com")
+        intruder = _token(client, "intruso-guia@example.com")
+        guide_id = _upload(client, owner).json()["id"]
+        assert client.delete(f"/guides/{guide_id}", headers=intruder).status_code == 404
+        assert client.get(f"/guides/{guide_id}/tab", headers=owner).status_code == 200
+        assert client.delete(f"/guides/{guide_id}", headers=owner).status_code == 204
+        assert client.get(f"/guides/{guide_id}", headers=owner).status_code == 404
+        assert client.get(f"/guides/{guide_id}/tab", headers=owner).status_code == 404
+        assert client.get("/guides", headers=owner).json() == []
+
+
 def test_la_cancion_de_la_guia_no_sale_en_la_busqueda_publica() -> None:
     with _client() as client:
         headers = _token(client, "privada@example.com")

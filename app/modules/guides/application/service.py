@@ -95,6 +95,11 @@ class GuideService:
         await self._uow.commit()
         return updated
 
+    async def delete(self, owner_id: UUID, guide_id: UUID) -> None:
+        await self.get(owner_id, guide_id)
+        await self._uow.guides.delete(guide_id)
+        await self._uow.commit()
+
     async def _practice_song(self, guide: SongGuide) -> int:
         """La canción que representa la guía en la práctica, compartida si el contenido coincide."""
         content_hash = f"{PRACTICE_SOURCE}:{guide.digest()}"
