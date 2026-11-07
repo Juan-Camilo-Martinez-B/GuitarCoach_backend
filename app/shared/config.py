@@ -1,8 +1,11 @@
 """Configuración tipada. Los secretos llegan por el entorno, nunca por el código."""
 
+import json
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Es público porque está en el repositorio: solo sirve para arrancar en local sin configurar.
 DEV_JWT_SECRET = "dev-only-change-me-public-value-not-for-real-use"
@@ -24,7 +27,8 @@ class Settings(BaseSettings):
     jwt_secret: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_ttl_minutes: int = 720
-    cors_origins: list[str] = ["http://localhost:5173"]
+    # NoDecode: el panel de Vercel guarda una URL suelta y pydantic no debe exigir JSON.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     daily_report_limit: int = 5
@@ -33,6 +37,26 @@ class Settings(BaseSettings):
     auth_requests_per_minute: int = 20
     hit_window_ms: int = 150
     redis_url: str = ""
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _origins(cls, value: object) -> object:
+        """Acepta un arreglo JSON, una URL suelta o varias separadas por comas."""
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+            text = text[1:-1].strip()
+        if not text:
+            return ["http://localhost:5173"]
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                inner = text[1:-1] if text.endswith("]") else text[1:]
+                return [item.strip().strip("'\"") for item in inner.split(",") if item.strip()]
+            return [parsed] if isinstance(parsed, str) else parsed
+        return [item.strip().strip("'\"") for item in text.split(",") if item.strip()]
 
     def ensure_production_secrets(self) -> None:
         """Impide arrancar en producción con el secreto de desarrollo o con uno corto."""

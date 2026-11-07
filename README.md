@@ -163,7 +163,7 @@ En el panel del proyecto del API:
 | `CORS_ORIGINS` | `["https://TU-FRONTEND.vercel.app"]` |
 | `GROQ_API_KEY` | la clave del tutor, si la usas |
 
-`CORS_ORIGINS` tiene que ser JSON, con la URL exacta del frontend. Vercel define `VERCEL=1`: la importación de una canción termina antes de responder, porque no hay un proceso que siga vivo después. El WebSocket de avisos no hace falta; el navegador consulta `GET /jobs/{id}`.
+`CORS_ORIGINS` es la URL exacta del frontend. También vale el arreglo JSON `["https://…"]`. Vercel define `VERCEL=1`: la importación de una canción termina antes de responder, porque no hay un proceso que siga vivo después. El WebSocket de avisos no hace falta; el navegador consulta `GET /jobs/{id}`.
 
 Una tablatura de más de 4,5 MB puede rechazarla el límite de cuerpo de Vercel, aunque la API acepte hasta 5 MB.
 

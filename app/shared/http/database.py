@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.requests import Request
@@ -25,10 +26,25 @@ def install_database(
 
     @app.middleware("http")
     async def database_session(request: Request, call_next: RequestResponseEndpoint) -> Response:
-        async with factory() as session:
-            request.state.uow = open_store(session)
-            try:
-                return await call_next(request)
-            except Exception:
-                await session.rollback()
+        if request.url.path == "/health":
+            return await call_next(request)
+        opened = False
+        try:
+            async with factory() as session:
+                request.state.uow = open_store(session)
+                opened = True
+                try:
+                    return await call_next(request)
+                except Exception:
+                    await session.rollback()
+                    raise
+        except Exception as error:
+            if opened:
                 raise
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "message": "No se pudo abrir la base de datos.",
+                    "error": type(error).__name__,
+                },
+            )

@@ -1,5 +1,6 @@
 """Punto de entrada de la API: la composición del monolito modular."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -37,6 +38,8 @@ from app.shared.http.security import install_security
 from app.shared.logging import configure_logging
 from app.shared.tasks.local_dispatcher import LocalTaskDispatcher
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Construye la aplicación. Los tests pueden inyectar una configuración propia."""
@@ -51,11 +54,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.events = bus
         try:
             factory = getattr(app.state, "session_factory", None)
-            if factory is None:
-                await ensure_catalog(cast(CatalogStore, memory))
-            else:
-                async with factory() as session:
-                    await ensure_catalog(cast(CatalogStore, SqlUnitOfWork(session)))
+            try:
+                if factory is None:
+                    await ensure_catalog(cast(CatalogStore, memory))
+                else:
+                    async with factory() as session:
+                        await ensure_catalog(cast(CatalogStore, SqlUnitOfWork(session)))
+            except Exception:
+                logger.exception("No se pudo sembrar el catálogo al arrancar.")
             yield
         finally:
             await bus.aclose()
