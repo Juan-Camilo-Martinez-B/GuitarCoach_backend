@@ -14,6 +14,20 @@ PRODUCTION_ENVIRONMENT = "production"
 MIN_JWT_SECRET_LENGTH = 32
 
 
+def _clean_origins(items: object) -> list[str]:
+    """El navegador envía el origen sin barra final. Una barra de más no coincide."""
+    if not isinstance(items, list):
+        return []
+    cleaned: list[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            continue
+        origin = item.strip().strip("'\"").rstrip("/")
+        if origin:
+            cleaned.append(origin)
+    return cleaned
+
+
 class Settings(BaseSettings):
     """Parámetros de proceso. Los valores por defecto solo sirven en local."""
 
@@ -54,9 +68,10 @@ class Settings(BaseSettings):
                 parsed = json.loads(text)
             except json.JSONDecodeError:
                 inner = text[1:-1] if text.endswith("]") else text[1:]
-                return [item.strip().strip("'\"") for item in inner.split(",") if item.strip()]
-            return [parsed] if isinstance(parsed, str) else parsed
-        return [item.strip().strip("'\"") for item in text.split(",") if item.strip()]
+                return _clean_origins(inner.split(","))
+            items = [parsed] if isinstance(parsed, str) else parsed
+            return _clean_origins(items)
+        return _clean_origins(text.split(","))
 
     def ensure_production_secrets(self) -> None:
         """Impide arrancar en producción con el secreto de desarrollo o con uno corto."""

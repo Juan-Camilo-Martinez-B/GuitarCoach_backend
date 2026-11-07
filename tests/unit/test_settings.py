@@ -37,6 +37,11 @@ def test_el_secreto_de_desarrollo_alcanza_la_longitud_de_la_firma() -> None:
     assert len(DEV_JWT_SECRET) >= MIN_JWT_SECRET_LENGTH
 
 
+def test_cors_quita_la_barra_final_que_el_navegador_no_envia() -> None:
+    settings = Settings(cors_origins="https://guitar-coach-frontend.vercel.app/")
+    assert settings.cors_origins == ["https://guitar-coach-frontend.vercel.app"]
+
+
 def test_cors_acepta_la_url_suelta_que_escribe_el_panel() -> None:
     settings = Settings(cors_origins="https://guitar-coach-frontend.vercel.app")
     assert settings.cors_origins == ["https://guitar-coach-frontend.vercel.app"]
