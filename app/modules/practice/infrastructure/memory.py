@@ -22,3 +22,7 @@ class InMemoryAttempts:
 
     async def metrics_for(self, attempt_id: UUID) -> tuple[ChordMetric, ...]:
         return self._metrics.get(attempt_id, ())
+
+    async def delete(self, attempt_id: UUID) -> None:
+        self._attempts.pop(attempt_id, None)
+        self._metrics.pop(attempt_id, None)

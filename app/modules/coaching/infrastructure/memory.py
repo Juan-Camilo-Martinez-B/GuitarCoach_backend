@@ -30,3 +30,6 @@ class InMemoryReports:
             if report.created_at.date() == day:
                 total += 1
         return total
+
+    async def delete_for_attempt(self, attempt_id: UUID) -> None:
+        self._items = [item for item in self._items if item.attempt_id != attempt_id]

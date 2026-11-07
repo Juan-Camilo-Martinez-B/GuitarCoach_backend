@@ -3,7 +3,7 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import column, select, table
+from sqlalchemy import column, delete, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.coaching.domain.report import Report, ReportContent
@@ -52,6 +52,10 @@ class SqlReportRepository:
             .where(_ATTEMPTS.c.user_id == user_id)
         )
         return sum(1 for row in rows if row.created_at.date() == day)
+
+    async def delete_for_attempt(self, attempt_id: UUID) -> None:
+        await self._session.execute(delete(ReportModel).where(ReportModel.attempt_id == attempt_id))
+        await self._session.flush()
 
 
 def _text_list(value: object) -> tuple[str, ...]:

@@ -3,10 +3,11 @@
 from typing import cast
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, Request, Response
 from pydantic import BaseModel
 
 from app.modules.coaching.application.create_report import CreateReport
+from app.modules.coaching.application.delete_attempt import DeleteAttempt
 from app.modules.coaching.domain.report import Report
 from app.modules.coaching.ports import CoachingStore, Tutor
 from app.modules.identity.public import bearer_user_id
@@ -59,6 +60,18 @@ async def create_report(
         "beginner",
     )
     return _response(report)
+
+
+@router.delete("/attempts/{attempt_id}", status_code=204)
+async def delete_attempt(
+    attempt_id: UUID,
+    request: Request,
+    authorization: str = Header(),
+) -> Response:
+    """Borra el intento del alumno. El informe y las métricas se van con él."""
+    user_id = bearer_user_id(authorization, current_settings(request))
+    await DeleteAttempt(_store(request)).execute(user_id, attempt_id)
+    return Response(status_code=204)
 
 
 @router.get("/attempts/{attempt_id}/report")

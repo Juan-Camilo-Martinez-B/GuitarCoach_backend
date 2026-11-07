@@ -210,6 +210,14 @@ async def update_guide(
     return _full(record)
 
 
+@router.delete("/guides/{guide_id}", status_code=204)
+async def delete_guide(guide_id: UUID, request: Request, authorization: str = Header()) -> Response:
+    """Borra la guía del alumno y el archivo de tablatura que la acompaña."""
+    owner_id = _owner(request, authorization)
+    await _service(request).delete(owner_id, guide_id)
+    return Response(status_code=204)
+
+
 @router.post("/songs/upload", status_code=201, tags=["songs"])
 async def upload_song(
     request: Request,

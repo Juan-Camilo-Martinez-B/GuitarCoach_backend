@@ -76,6 +76,15 @@ class SqlGuideRepository:
         row = await self._session.get(GuideTabModel, guide_id)
         return None if row is None else GuideTab(row.guide_id, row.format, row.data)
 
+    async def delete(self, guide_id: UUID) -> None:
+        tab = await self._session.get(GuideTabModel, guide_id)
+        if tab is not None:
+            await self._session.delete(tab)
+        row = await self._session.get(SongGuideModel, guide_id)
+        if row is not None:
+            await self._session.delete(row)
+        await self._session.flush()
+
 
 def _guide_to_entity(row: SongGuideModel) -> GuideRecord:
     return GuideRecord(
