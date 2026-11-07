@@ -23,4 +23,6 @@ def install_security(app: FastAPI, origins: list[str]) -> None:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
+        # El frontend aísla el origen (COEP). Sin esta cabecera el navegador bloquea la API.
+        response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
         return response

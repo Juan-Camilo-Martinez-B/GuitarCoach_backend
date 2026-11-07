@@ -148,6 +148,25 @@ La variante de capa gratuita usa Neon o Supabase y la API de Groq. El detalle de
 
 Copia `.env.example` a `.env` para el resto de variables. En producción `JWT_SECRET` no puede quedar en el valor de desarrollo.
 
+## Vercel
+
+El API es un proyecto de Vercel distinto del frontend. Vercel detecta FastAPI en `app/main.py` (`app`). Python 3.12 está fijado en `.python-version`.
+
+En el panel del proyecto del API:
+
+| Variable | Valor |
+| --- | --- |
+| `ENVIRONMENT` | `production` |
+| `USE_DATABASE` | `true` |
+| `DATABASE_URL` | la URL `postgresql+asyncpg://` del pooler de Supabase, puerto 5432 |
+| `JWT_SECRET` | una clave de al menos 32 caracteres |
+| `CORS_ORIGINS` | `["https://TU-FRONTEND.vercel.app"]` |
+| `GROQ_API_KEY` | la clave del tutor, si la usas |
+
+`CORS_ORIGINS` tiene que ser JSON, con la URL exacta del frontend. Vercel define `VERCEL=1`: la importación de una canción termina antes de responder, porque no hay un proceso que siga vivo después. El WebSocket de avisos no hace falta; el navegador consulta `GET /jobs/{id}`.
+
+Una tablatura de más de 4,5 MB puede rechazarla el límite de cuerpo de Vercel, aunque la API acepte hasta 5 MB.
+
 La imagen de contenedor escucha en el puerto 8080:
 
 ```powershell

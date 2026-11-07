@@ -1,5 +1,6 @@
 """Búsqueda local e importación asíncrona de canciones."""
 
+import os
 from typing import cast
 from uuid import UUID
 
@@ -65,8 +66,15 @@ async def import_song(body: ImportBody, request: Request) -> JobResponse:
     if not isinstance(settings, Settings) or not isinstance(registry, ScraperRegistry):
         raise RuntimeError("La importación no está configurada.")
     job = await build_importer(_store(request), settings, registry).start(None, body.query)
-    _dispatcher(request).enqueue("import_song", {"job_id": str(job.id)})
-    return JobResponse(id=str(job.id), status=job.status)
+    dispatcher = _dispatcher(request)
+    dispatch_id = dispatcher.enqueue("import_song", {"job_id": str(job.id)})
+    # En Vercel el proceso se congela al responder. La importación tiene que terminar aquí.
+    if os.environ.get("VERCEL"):
+        await dispatcher.join(dispatch_id)
+        stored = await _store(request).jobs.get(job.id)
+        if stored is not None:
+            job = stored
+    return JobResponse(id=str(job.id), status=job.status, song_id=job.song_id, error=job.error)
 
 
 @router.get("/songs/{song_id}/study")
