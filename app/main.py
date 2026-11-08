@@ -1,6 +1,7 @@
 """Punto de entrada de la API: la composición del monolito modular."""
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -33,7 +34,7 @@ from app.shared.config import Settings, get_settings
 from app.shared.http.database import install_database
 from app.shared.http.errors import register_exception_handlers
 from app.shared.http.health import router as health_router
-from app.shared.http.rate_limit import SlidingWindowLimiter, install_auth_rate_limit
+from app.shared.http.rate_limit import build_auth_rate_limiter, install_auth_rate_limit
 from app.shared.http.security import install_security
 from app.shared.logging import configure_logging
 from app.shared.tasks.local_dispatcher import LocalTaskDispatcher
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active.ensure_production_secrets()
     configure_logging(active.log_level)
     memory = InMemoryUnitOfWork()
+    auth_limiter = build_auth_rate_limiter(active.redis_url, active.auth_requests_per_minute)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -65,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             await bus.aclose()
+            await auth_limiter.aclose()
 
     app = FastAPI(title=active.app_name, lifespan=lifespan)
     app.state.settings = active
@@ -98,7 +101,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_database(app, active, SqlUnitOfWork)
     register_exception_handlers(app)
     install_security(app, active.cors_origins)
-    install_auth_rate_limit(app, SlidingWindowLimiter(active.auth_requests_per_minute))
+    # Vercel define VERCEL=1 y es el único proxy cuyas cabeceras de IP son de confianza.
+    install_auth_rate_limit(app, auth_limiter, trust_proxy_headers=bool(os.environ.get("VERCEL")))
     for router in (
         health_router,
         auth_router,

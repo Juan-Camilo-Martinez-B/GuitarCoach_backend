@@ -3,6 +3,7 @@
 import ssl
 
 from sqlalchemy import event
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -10,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import ConnectionPoolEntry, NullPool
 
 
 def _supabase_ssl() -> ssl.SSLContext:
@@ -42,7 +43,9 @@ def create_engine(database_url: str) -> AsyncEngine:
     engine = create_async_engine(_asyncpg_url(database_url), connect_args=connect_args, **kwargs)
 
     @event.listens_for(engine.sync_engine, "connect")
-    def _use_app_schema(dbapi_connection, _connection_record) -> None:
+    def _use_app_schema(
+        dbapi_connection: DBAPIConnection, _connection_record: ConnectionPoolEntry
+    ) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("SET search_path TO guitarcoach, public")
         cursor.close()
