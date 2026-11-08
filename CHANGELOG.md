@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- El límite de `POST /auth/*` se comparte por Redis cuando hay `REDIS_URL` (Upstash en Vercel): ventana deslizante por IP en un *sorted set*. Si Redis falla, cuenta en memoria. Detrás de Vercel la IP sale de `x-real-ip`.
 - Arquitectura de monolito modular: `identity`, `catalog`, `guides`, `practice`, `coaching`, `learning` y `journey`, con interfaces públicas y una prueba que hace cumplir las fronteras. Las rutas y los mensajes se conservan; el WebSocket y Redis siguen igual.
 - Nuevo módulo `journey`: `GET` y `POST /me/journey` guardan la ruta, la racha y los logros en la cuenta.
 - El informe y el análisis del curso ya no fallan sin Groq: responden con un análisis local.

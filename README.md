@@ -71,4 +71,4 @@ app/
 
 El API es un proyecto de Vercel distinto del frontend. El objeto publicado es `app` en `app/main.py`. Python 3.12 está en `.python-version`.
 
-Los valores del panel, el pooler de Supabase y cuándo hace falta Redis están en [docs/despliegue.md](docs/despliegue.md). `CORS_ORIGINS` es la URL del frontend, con o sin corchetes JSON. No definas `REDIS_URL` en Vercel: el navegador consulta `GET /jobs/{id}`.
+Los valores del panel, el pooler de Supabase y cuándo hace falta Redis están en [docs/despliegue.md](docs/despliegue.md). `CORS_ORIGINS` es la URL del frontend, con o sin corchetes JSON. En Vercel, `REDIS_URL` apunta a Upstash (`rediss://`) para que el límite de `POST /auth/*` se comparta entre instancias; sin ella cada instancia cuenta por su lado.
